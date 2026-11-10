@@ -6,10 +6,10 @@ description: "Playbook for the orchestrator agent of a Herdr workspace started b
 # Orchestrator of a Herdr workspace
 
 Your prompt names start mode (`new` / `resume`), workspace, branch, main worktree and Herdr workspace id, sub worktrees
-(`path|workspace id`), name slug, workspace files folder (`$FILES`), ticket, task, config file, plan mode, stops
+(`path|workspace id`; the id is empty with herdr-core), name slug, workspace files folder (`$FILES`), ticket, task, config file, plan mode, stops
 ("Breaks"), review and autonomy ("Autonomous"). Do no code work yourself. Workspace commands (status, add/remove
 sub): skill `herdr-workspace`; `$WS` below = the `scripts/` folder of that skill (e.g. `~/.claude/skills/herdr-workspace/scripts`).
-Herdr basics (IDs, `--no-focus`, what not to close): skill `herdr`.
+Backends: Herdr 1 (workspaces, panes) or herdr-core (`hc` terminals), picked by `ws-agent.sh`; for raw control see skill `herdr` or `hc --help`.
 
 ## Config
 
@@ -37,28 +37,29 @@ skill = brief alone; no brief = write one from the ticket.
 
 ## Workers
 
-A worker is a Herdr agent in its own pane, named `<slug>-plan`, `<slug>-impl-<repo>`, `<slug>-review-<repo>`,
-`<slug>-decider` (`[a-z][a-z0-9_-]{0,31}`; repo part shortened).
+A worker is an agent in its own pane (Herdr 1) or terminal (herdr-core), named `<slug>-plan`, `<slug>-impl-<repo>`,
+`<slug>-review-<repo>`, `<slug>-decider` (`[a-z][a-z0-9_-]{0,31}`; repo part shortened). Use `$WS/ws-agent.sh`, which
+is the same on both backends:
 
 ```bash
-# 1. pane next to the anchor, in the worktree the worker is for. Anchor: your own pane ($HERDR_PANE_ID) for planner
-#    and decider; for an implementer or reviewer a pane of that sub repo's workspace (herdr pane list --workspace <id>).
-herdr pane split <anchor> --direction right --cwd <worktree> --no-focus     # → .result.pane.pane_id
-# 2. agent
-herdr agent start <name> --kind <kind> --pane <pane> -- <native args>
-# 3. task; blocks until the agent settles (idle / done / blocked)
-herdr agent prompt <name> "<spec>" --wait
+ws-agent.sh start <name> --cwd <worktree> [--kind K] [--model M] [--effort E] [--args "…"] --ws <workspace>
+ws-agent.sh prompt <name> "<spec>" --wait         # waits until idle first; --wait blocks until the turn ends
+ws-agent.sh state <name>                          # idle | working | blocked | done | error | unknown | gone
+ws-agent.sh read <name> [lines]   |  wait <name> [--timeout SEC]  |  list [<slug>-]  |  focus <name>
 ```
-Split wide panes right, narrow ones down; do not stack same-direction splits. Reuse a worker for fixes and later
-tasks (`agent prompt` again) instead of starting a new one. Never close workspaces, tabs or panes you did not create.
+`--cwd` is the worktree the worker is for (a sub repo's worktree for its implementer and reviewer); kind, model,
+effort and args come from the worker's `WS_<ROLE>_*` keys. Reuse a worker for fixes and later tasks (`prompt` again)
+instead of starting a new one. Never close workspaces, tabs, panes or terminals you did not create. Workers keep
+running if you end; with herdr-core they also survive a closed ssh link on a remote machine.
 
-**Waiting:** run each `agent prompt … --wait` as a background Bash command (`run_in_background`); you are notified when
-it returns, so several workers (e.g. one implementer per repo) run in parallel and you never poll. After a return,
-check the worker's state with `herdr agent get <name>`:
+**Waiting:** run each `ws-agent.sh prompt … --wait` as a background Bash command (`run_in_background`); you are
+notified when it returns, so several workers (e.g. one implementer per repo) run in parallel and you never poll. After
+a return, check `ws-agent.sh state <name>`:
 - `idle` / `done` + its report file exists → finished (below).
-- `blocked` → it waits at an approval or question dialog (a worker in a fresh worktree usually starts with "trust this folder": the user's call, tell them via Attention): `herdr agent read <name> --source recent-unwrapped --lines 80`,
-  then answer as under "Questions". Never type into a blocked dialog on a guess.
-- `agent_prompt_stalled` or timeout → inspect with `agent read` before resending; the prompt may have arrived.
+- `blocked`, or `unknown` for a long time → it waits at a dialog (a worker in a fresh worktree usually starts with
+  "trust this folder": the user's call, tell them via Attention): `ws-agent.sh read <name> 80`, then answer as under
+  "Questions". Never type into a dialog on a guess.
+- a timeout → inspect with `read` before resending; the prompt may have arrived.
 
 **Report rule** (append to every worker spec): "When finished, write your result as Markdown to `$FILES/reports/<name>.md`
 (outcome, evidence such as tests and commits, open points) and end your turn with the single line `REPORT <path>`.
@@ -69,8 +70,8 @@ file, not the terminal scrollback.
 
 You may be one of several panes the user watches. When the user must act (review stop, clarify question,
 "Approve plan?", a question you cannot answer, the final report): say it in your chat first, then
-`herdr notification show "<workspace>: <what>" --sound request`, and for a worker's own chat
-`herdr agent focus <name>`. Keep `$FILES/state.md` current (plan task done, implementers running, review round,
+`$WS/ws-agent.sh notify "<workspace>: <what>"`, and for a worker's own chat
+`$WS/ws-agent.sh focus <name>`. Keep `$FILES/state.md` current (plan task done, implementers running, review round,
 open questions): a one-line-per-item status you rewrite at every step — it is what a resumed orchestrator reads.
 
 ## Flow
@@ -85,7 +86,7 @@ open questions): a one-line-per-item status you rewrite at every step — it is 
 3. **Review stops and approval:** a planner that returns at a review stop or a clarify question waits for the user:
    tell them so (Attention), do not steer or restart it; they answer in the planner's pane, and you continue when it
    settles again. (Autonomous mode: see below.) When the plan report is in, give the user the spec path and a 3-line
-   summary and ask "Approve plan?" in your chat. "yes" → step 4; changes → `agent prompt` them to the planner and wait again.
+   summary and ask "Approve plan?" in your chat. "yes" → step 4; changes → `ws-agent.sh prompt` them to the planner and wait again.
 4. **Implement:** one worker per repo the plan touches, in that repo's worktree, with that repo's implement agent,
    model, skill and brief; keep it alive when review is on (it gets the fixes). A repo the plan needs but the
    workspace lacks: `$WS/ws-start.sh <branch> --name <name> --sub <repo>`; one with `config: none`: set it up with
@@ -94,10 +95,10 @@ open questions): a one-line-per-item status you rewrite at every step — it is 
 5. **Review** (only when on): after an implementer's report, start `<slug>-review-<repo>` in the same worktree with the
    review agent, model, skill and brief; spec: review the branch against its base and the spec, report findings by
    severity with file and line, change nothing. Send the findings that need a change to the implementer
-   (`agent prompt <impl> … --wait`); after its fix, review again. Stop after `WS_REVIEW_ROUNDS` rounds and list what is
+   (`ws-agent.sh prompt <impl> … --wait`); after its fix, review again. Stop after `WS_REVIEW_ROUNDS` rounds and list what is
    left in the report. Suggestions and nits go into the report, not into a fix round.
 6. **Questions:** a `QUESTION` report (or a blocked worker): answer when it follows from spec, plan or project rules,
-   by `agent prompt <worker> "<answer>" --wait`; otherwise ask the user.
+   by `ws-agent.sh prompt <worker> "<answer>" --wait`; otherwise ask the user.
 7. **Done:** final report to the user per task: outcome, evidence (tests, commits), review result, open points
    (Attention). Removal is the user's call.
 
@@ -107,7 +108,7 @@ The user gives the task and gets the result; a **Decider** worker takes their pl
 after the workspace starts (anchor = your pane, `WS_DECIDE_*`), spec = "Use the skills <WS_DECIDE_SKILL> for real
 trade-offs only; answer factual questions directly from ticket, spec, code and project rules. Answer each question
 in `$FILES/reports/<name>.md`." + `WS_DECIDE_BRIEF` + ticket text. Every question then goes to it with
-`agent prompt <decider> "<question + context>" --wait`; its answer goes back to the asker.
+`ws-agent.sh prompt <decider> "<question + context>" --wait`; its answer goes back to the asker.
 
 Changes to the flow:
 - No review stops (ignore "Breaks"). The planner spec says: "Do not ask the user. Write every clarify question as a
@@ -126,7 +127,7 @@ two answers, and every topic in `WS_ESCALATE`. Never push, whatever the mode.
 ## Context hygiene
 
 Workers pile up context. Built-in commands go to an idle worker through the agent surface, e.g.
-`herdr agent prompt <worker> "/compact"` (no `--wait` needed). Idle = its report is in, `herdr agent get` shows
+`$WS/ws-agent.sh prompt <worker> "/compact"` (no `--wait` needed). Idle = its report is in, `ws-agent.sh state` shows
 `idle`/`done`. Never mid-task.
 
 | Key (default) | When |
@@ -142,6 +143,6 @@ findings.
 ## Resume (start mode `resume`)
 
 A previous orchestrator crashed or was closed; its workers (panes) live on. Do not restart them.
-1. `herdr agent list` → workers whose name starts with `<slug>-`; `herdr agent get` each → who is `working`, `idle`, `blocked`.
+1. `$WS/ws-agent.sh list <slug>-` → workers and who is `working`, `idle`, `blocked`.
 2. Read `$FILES/state.md`, `$FILES/reports/` and `$FILES/decisions.md` → what is done, asked and answered.
 3. Continue the flow at that point; answer blocked workers per "Workers". Tell the user in 3 lines where things stand.

@@ -20,8 +20,8 @@ counterpart of [orca-workspace](../orca-workspace)):
 
 ## Install
 
-Requirements: [Herdr](https://herdr.dev) (`herdr` CLI, 0.9+), `git`, `jq`, `rsync`, bash. Your agent must run in a
-Herdr pane (`HERDR_ENV=1`). Dependency dirs are cloned copy-on-write where the filesystem allows it, else copied.
+Requirements: `git`, `jq`, `rsync`, bash and one backend: [Herdr](https://herdr.dev) 1 (`herdr` CLI, 0.9+; your agent runs in a
+Herdr pane, `HERDR_ENV=1`) or herdr-core (`hc`). `WS_BACKEND=herdr|core` forces one. Dependency dirs are cloned copy-on-write where the filesystem allows it, else copied.
 
 ```bash
 git clone <this repo> ~/projects/herdr-workspace
@@ -40,6 +40,13 @@ Update with `git pull` (links follow). Then, in your main project inside Herdr, 
 
 Scripts behind it (`skills/herdr-workspace/scripts/`): `ws-start.sh`, `ws-status.sh`, `ws-stop.sh`, `ws-setup.sh`,
 `ws-teardown.sh`, `ws-doctor.sh`.
+
+## herdr-core and remote machines
+
+With herdr-core every worker is a terminal that keeps running without any client attached. `--on <machine>` runs a
+script on a saved machine (`hc machine add <ssh host>`), so a workspace can live and keep working on a remote box
+while you are offline: `ws-start.sh PROJ-1 --on devbox --remote-dir ~/projects/api`, later `hc attach devbox/<name>`.
+The remote machine needs `hc`, the agents, the repos and these skills (`install.sh`).
 
 ## Differences to orca-workspace
 

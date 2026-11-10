@@ -7,9 +7,9 @@ description: "Starts, manages and removes Herdr workspaces: a main worktree on a
 
 Generic: the repo the agent runs in is the **main project**; everything project-specific comes from the repo's
 config (skill `herdr-workspace-config`). Scripts: `scripts/` next to this file (`$WS` below), run from any checkout
-of the main project, inside Herdr (`test "${HERDR_ENV:-}" = 1`, else say so and stop). General Herdr control: skill `herdr`.
+of the main project. Two backends, picked automatically (`WS_BACKEND=herdr|core` forces one): **Herdr 1** when you run inside a Herdr pane (`HERDR_ENV=1`), else **herdr-core** (`hc`, terminals that keep running). Neither → say so and stop.
 
-A workspace = one Herdr workspace per worktree (main + one per sub repo, same name and branch). Herdr links them
+A workspace = one worktree per repo (main + one per sub repo, same name and branch); with Herdr 1 also one Herdr workspace each, with herdr-core plain git worktrees and labelled terminals. Herdr links them
 only loosely, so the scripts keep a manifest in the main repo's git dir (`<git-common-dir>/herdr-workspace/<name>.env`).
 
 ## Start
@@ -35,6 +35,14 @@ ws-start.sh <branch> [--ticket KEY] [--brief "<task or ticket text>"] [--breaks 
 
 Report the workspaces and that setup runs in the "setup" tabs (a first container or VM build — DDEV, Vagrant, Docker Compose — can take minutes).
 
+## Remote machines (herdr-core)
+
+Add `--on <machine> [--remote-dir <repo path there>]` to `ws-start.sh`, `ws-status.sh`, `ws-stop.sh` or `ws-doctor.sh`:
+it runs there through `hc exec --on` (machines: `hc machine add <ssh host>`, `hc machine ls`). The repos, `hc`, the
+agents (claude …) and these skills (`install.sh`) must exist on that machine; `WS_REMOTE_SCRIPTS` overrides the
+scripts path there. Everything it starts is a terminal on that machine and keeps running when you disconnect:
+orchestrator, workers, even the pending prompt delivery. Look in with `hc attach <machine>/<name>` or `hc ls`/`hc read`.
+
 ## Manage
 
 | Task | Command |
@@ -58,4 +66,5 @@ workspaces and keeps all branches. Then the user tests locally on the branch.
 - Herdr has no setup/archive hooks, no repo registry and no parent/child worktrees: setup runs in a tab, teardown in `ws-stop.sh`, the manifest ties the workspace together.
 - `herdr worktree create` makes a new branch; an existing branch is checked out with `git worktree add` and then `herdr worktree open --path`; both open a Herdr workspace labelled with the name.
 - `herdr worktree remove` keeps the branch.
-- A new worktree folder makes Claude Code ask "trust this folder": the agent is `blocked` until the user confirms it in Herdr. `ws-start.sh` waits for that (10 min) and then sends the prompt; never answer the dialog yourself.
+- A new worktree folder makes Claude Code ask "trust this folder". Herdr 1 marks the agent `blocked`; herdr-core shows no status yet (`unknown`). Either way the user must confirm it (Herdr, or `hc attach <name>`); `ws-start.sh` / `ws-agent.sh prompt` wait for that (10 min) and then send. Never answer the dialog yourself.
+- herdr-core: terminals started from a Claude session inherit `CLAUDE_CODE_CHILD_SESSION` and then do not save transcripts; start the core from a clean shell (or set `CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1`).

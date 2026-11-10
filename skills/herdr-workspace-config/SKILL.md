@@ -64,9 +64,9 @@ flags for `claude` (`--model`, `--effort`) and `codex` (`-m`, `-c model_reasonin
 `--model`, so use `_ARGS` for the rest. Changes apply to workspaces started afterwards; a running orchestrator keeps
 what it read.
 
-## Herdr settings
+## Backend settings
 
-Herdr has no per-repo setup or archive hooks and no per-repo workspace directory: worktrees land in
+Both backends (Herdr 1 and herdr-core) share the same keys. Herdr has no per-repo setup or archive hooks and no per-repo workspace directory: worktrees land in
 `~/.herdr/worktrees/<repo>/` (change with `[worktrees] directory` in `~/.config/herdr/config.toml`). `ws-start.sh`
 runs the setup itself in a "setup" tab; `ws-stop.sh` runs the teardown. Remove workspaces with `ws-stop.sh`, not in
 the Herdr UI, or the teardown (containers, VMs) is skipped.

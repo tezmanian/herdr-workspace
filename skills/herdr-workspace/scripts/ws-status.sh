@@ -3,6 +3,7 @@
 # Usage (inside any checkout of the main project): ws-status.sh [name]
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
+ws_remote "$@"
 MAIN=$(ws_main .)
 DIR=$(ws_dir "$MAIN")
 NAMES=$(cd "$DIR" 2>/dev/null && ls *.env 2>/dev/null | sed 's/\.env$//' | { [[ -n "${1:-}" ]] && grep -x "$1" || cat; } || true)

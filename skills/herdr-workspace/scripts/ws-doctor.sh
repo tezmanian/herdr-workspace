@@ -4,17 +4,17 @@
 # Usage (inside any checkout of the main project): ws-doctor.sh [sub repo]...
 set -uo pipefail
 source "$(dirname "$0")/lib.sh"
+ws_remote "$@"
 FAILED=0
 ok() { echo "ok    $*"; }
 warn() { echo "warn  $*"; }
 fail() { echo "FAIL  $*"; FAILED=1; }
 
-for t in herdr git jq rsync; do
+for t in git jq rsync; do
     command -v "$t" >/dev/null && ok "$t found" || fail "$t missing"
 done
-command -v herdr >/dev/null || exit 1
-[[ "${HERDR_ENV:-}" == 1 ]] && ok "running inside Herdr" || fail "not inside a Herdr pane (HERDR_ENV=1 missing): start your agent in Herdr"
-herdr workspace list >/dev/null 2>&1 && ok "Herdr server reachable" || fail "Herdr server not reachable (herdr status)"
+command -v herdr >/dev/null || command -v hc >/dev/null || fail "neither herdr nor hc (herdr-core) found"
+case "$(ws_backend)" in herdr) ok "backend: Herdr 1" ;; core) ok "backend: herdr-core (hc)" ;; *) fail "no backend: run inside Herdr or start herdr-core (hc server status)" ;; esac
 ok "worktrees land in ~/.herdr/worktrees/<repo>/ unless [worktrees] directory is set in ~/.config/herdr/config.toml"
 
 check_repo() {
@@ -37,4 +37,8 @@ for s in ${SUBS[@]+"${SUBS[@]}"}; do
     repo=$(ws_repo_path "$s" 2>/dev/null) && check_repo "$repo" sub || fail "sub repo $s not found (path, or folder next to the main project)"
 done
 warn "Herdr has no setup/archive hooks: worktrees made in the Herdr UI stay plain; remove workspaces with ws-stop.sh (runs teardown)"
+if command -v hc >/dev/null; then
+    ms=$(hc machine ls --json 2>/dev/null | jq -r '.machines[]?.name' | tr '\n' ' ')
+    ok "remote machines for --on: ${ms:-none (hc machine add <ssh host>)}"
+fi
 exit $FAILED

@@ -66,6 +66,7 @@ ws_parent_of() {
 
 # Herdr workspace id of the workspace showing the checkout $1 (empty = none open).
 ws_wsid() {
+    [[ "$(ws_backend)" == herdr ]] || return 0
     herdr workspace list | jq -r --arg p "$1" \
         '.result.workspaces[] | select(.worktree.checkout_path == $p) | .workspace_id' | head -1
 }
@@ -100,4 +101,110 @@ ws_worktree_base() {
     d=$(sed -n '/^\[worktrees\]/,/^\[/{s/^ *directory *= *"\(.*\)".*/\1/p}' "${HERDR_CONFIG_PATH:-$HOME/.config/herdr/config.toml}" 2>/dev/null | head -1)
     d=${d:-$HOME/.herdr/worktrees}
     echo "${d/#\~/$HOME}"
+}
+
+# ---------------------------------------------------------------------------------------------------------------
+# Backends. "herdr": Herdr 1 (workspaces, panes, `herdr agent`). "core": herdr-core's `hc` (terminals that stay alive,
+# also on remote machines). WS_BACKEND=herdr|core forces one; default herdr inside a Herdr pane, else core.
+# ---------------------------------------------------------------------------------------------------------------
+ws_backend() {
+    if [[ -n "${WS_BACKEND:-}" ]]; then echo "$WS_BACKEND"
+    elif [[ "${HERDR_ENV:-}" == 1 ]] && command -v herdr >/dev/null && herdr workspace list >/dev/null 2>&1; then echo herdr
+    elif command -v hc >/dev/null && hc server status >/dev/null 2>&1; then echo core
+    else echo none; fi
+}
+
+# Run a script of this skill on another machine (hc machine ls) when the args carry `--on <machine>` [--remote-dir D].
+# Call first, as: ws_remote "$@". Terminals started there keep running when this command or the ssh link ends.
+# The skills must be installed there too (install.sh); WS_REMOTE_SCRIPTS overrides their path on that machine.
+ws_remote() {
+    local a=("$@") i M="" D=$PWD out=()
+    for ((i = 0; i < ${#a[@]}; i++)); do
+        case ${a[i]} in
+            --on) M=${a[++i]} ;;
+            --remote-dir) D=${a[++i]} ;;
+            *) out+=("${a[i]}") ;;
+        esac
+    done
+    [[ -z "$M" ]] && return 0
+    exec hc exec --on "$M" --cwd "$D" --timeout 600 bash -lc \
+        'exec "${WS_REMOTE_SCRIPTS:-$HOME/.claude/skills/herdr-workspace/scripts}/$0" "$@"' "$(basename "$0")" "${out[@]}"
+}
+
+# be_worktree <repo> <branch> <name> <base>: creates or checks out the worktree, prints "path|workspace id|root pane".
+be_worktree() {
+    local repo=$1 branch=$2 name=$3 base=$4 path out
+    path=$(ws_worktree_base)/$(basename "$repo")/$name
+    case $(ws_backend) in
+        herdr)
+            if git -C "$repo" rev-parse -q --verify "refs/heads/$branch" >/dev/null \
+                || git -C "$repo" rev-parse -q --verify "refs/remotes/origin/$branch" >/dev/null; then
+                # Existing branch: herdr can only create new ones, so check it out with git and let herdr open that worktree.
+                git -C "$repo" worktree add -q "$path" "$branch" >&2
+                out=$(herdr worktree open --cwd "$repo" --path "$path" --label "$name" --no-focus)
+            else
+                out=$(herdr worktree create --cwd "$repo" --branch "$branch" --base "$base" --label "$name" --no-focus)
+            fi
+            echo "$(jq -r '.result.worktree.path' <<<"$out")|$(jq -r '.result.workspace.workspace_id' <<<"$out")|$(jq -r '.result.root_pane.pane_id // empty' <<<"$out")" ;;
+        core)
+            if git -C "$repo" rev-parse -q --verify "refs/heads/$branch" >/dev/null \
+                || git -C "$repo" rev-parse -q --verify "refs/remotes/origin/$branch" >/dev/null; then
+                git -C "$repo" worktree add -q "$path" "$branch" >&2
+            else
+                git -C "$repo" worktree add -q -b "$branch" "$path" "$base" >&2
+            fi
+            echo "$path||" ;;
+        *) echo "No backend: run inside Herdr (HERDR_ENV=1) or start herdr-core (hc server status)." >&2; return 1 ;;
+    esac
+}
+
+# be_setup <workspace name> <worktree> <workspace id> [parent worktree]: runs ws-setup.sh for the worktree in the background.
+be_setup() {
+    local name=$1 wt=$2 wsid=$3 parent=${4:-} tab
+    case $(ws_backend) in
+        herdr)
+            tab=$(herdr tab create --workspace "$wsid" --cwd "$wt" --label setup --no-focus)
+            herdr pane run "$(jq -r '.result.root_pane.pane_id' <<<"$tab")" \
+                "${parent:+WS_PARENT='$parent' }'$WS_HOME/scripts/ws-setup.sh'" >/dev/null ;;
+        core)
+            hc run --bg --no-parent --name "su-$(ws_slug "$name")-$(ws_slug "$(basename "$(ws_main "$wt")")" | cut -c1-9)" --cwd "$wt" \
+                --label "ws=$name" --label role=setup \
+                env ${parent:+"WS_PARENT=$parent"} "$WS_HOME/scripts/ws-setup.sh" >/dev/null ;;
+    esac
+}
+
+# be_state <agent>: idle | working | blocked | done | error | unknown | gone
+be_state() {
+    case $(ws_backend) in
+        herdr) herdr agent get "$1" 2>/dev/null | jq -r '.result.agent.agent_status // "gone"' || echo gone ;;
+        core) hc get "$1" --json 2>/dev/null | jq -r '.status.state // "unknown"' || echo gone ;;
+    esac
+}
+
+# be_wait_idle <agent> [seconds]: until the agent can take input. A fresh folder makes Claude ask "trust this folder":
+# that is the user's call (herdr: blocked, core: no status yet), so say so and keep waiting.
+be_wait_idle() {
+    local name=$1 max=${2:-600} t=0 s said=0
+    while ((t <= max)); do
+        s=$(be_state "$name")
+        case $s in idle | done) return 0 ;; gone) echo "Agent $name is gone." >&2; return 1 ;; esac
+        if ((t >= 10 && said == 0)); then
+            echo "Agent $name is $s: it may wait for your input (e.g. 'trust this folder'). Answer it yourself (herdr agent focus $name / hc attach $name). Waiting up to $((max / 60)) min…" >&2
+            said=1
+        fi
+        sleep 3
+        t=$((t + 3))
+    done
+    echo "Agent $name did not become idle within $max s (state: $s)." >&2
+    return 1
+}
+
+# be_kill_dir <path>: ends every core terminal working in that worktree (setup logs, agents, shells).
+be_kill_dir() {
+    [[ "$(ws_backend)" == core ]] || return 0
+    local a
+    for a in $(hc ls --all --json | jq -r --arg p "$1" '.terminals[] | select(.cwd == $p or (.cwd | startswith($p + "/"))) | .address'); do
+        hc kill "$a" >/dev/null 2>&1 || true
+        hc rm "$a" >/dev/null 2>&1 || true
+    done
 }

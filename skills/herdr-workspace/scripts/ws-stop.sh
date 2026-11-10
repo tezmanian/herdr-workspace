@@ -3,9 +3,11 @@
 # Refuses on uncommitted changes. Untracked files listed in WS_KEEP / WS_KEEP_PATTERNS that differ from the main
 # checkout are handled per WS_IGNORED_ON_REMOVE or the flag: ask (list them, remove nothing), copy (into the main
 # checkout), delete.
+# --on MACHINE [--remote-dir DIR] runs it on a herdr-core machine.
 # Usage (inside any checkout of the main project): ws-stop.sh <name> [--ask|--copy|--delete] [--sub REPO]...
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
+ws_remote "$@"
 NAME=${1:?usage: ws-stop.sh <name> [--ask|--copy|--delete] [--sub REPO]...}
 shift
 MODE="" ONLY=()
@@ -63,7 +65,8 @@ done
 
 for wt in "${TREES[@]}"; do
     WS_WORKTREE_PATH=$wt "$WS_HOME/scripts/ws-teardown.sh"
-    id=$(ws_wsid "$wt")
+    be_kill_dir "$wt"
+    id=$(ws_wsid "$wt" 2>/dev/null || true)
     if [[ -n "$id" ]]; then
         herdr worktree remove --workspace "$id" --force >/dev/null
     else

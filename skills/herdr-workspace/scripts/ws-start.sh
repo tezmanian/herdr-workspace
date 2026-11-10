@@ -4,11 +4,13 @@
 # orchestrator agent in the main workspace. Run it inside Herdr, in the main checkout.
 # Usage: ws-start.sh <branch> [--name N] [--ticket KEY] [--brief TEXT] [--breaks STEPS|none]
 #   [--review on|off] [--autonomous on|off] [--sub REPO]... [--no-orchestrator | --orchestrator]
+# --on MACHINE [--remote-dir DIR] runs it on a saved herdr-core machine (hc machine ls); work there keeps running.
 # REPO is a path or the folder name of a repo next to the main project. Rerun with more --sub to add sub workspaces
 # later; rerun with --orchestrator to start a new orchestrator for an existing workspace (the old one crashed or was
 # closed); it takes over.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
+ws_remote "$@"
 BRANCH=${1:?usage: ws-start.sh <branch> [--name N] [--ticket KEY] [--brief TEXT] [--breaks S] [--review on|off] [--autonomous on|off] [--sub REPO]... [--no-orchestrator|--orchestrator]}
 shift
 NAME="" TICKET="" BRIEF="" BREAKS="" REVIEW="" AUTONOMY="" ORCHESTRATOR=1
@@ -27,7 +29,7 @@ while (($#)); do
         *) echo "Unknown option $1"; exit 1 ;;
     esac
 done
-test "${HERDR_ENV:-}" = 1 || { echo "Not running inside Herdr (HERDR_ENV=1 missing)."; exit 1; }
+[[ "$(ws_backend)" != none ]] || { echo "No backend: run inside Herdr (HERDR_ENV=1) or start herdr-core (hc server status)."; exit 1; }
 MAIN=$(ws_main .)
 WS_MAIN_PROJECT=$MAIN
 ws_config "$MAIN"
@@ -37,26 +39,14 @@ DIR=$(ws_dir "$MAIN")
 MANIFEST=$DIR/$NAME.env
 mkdir -p "$DIR/$NAME"
 
-# Creates (or opens) the worktree of repo $1 on BRANCH, runs its setup in a "setup" tab; prints "path|workspace id|root pane".
+# Creates (or checks out) the worktree of repo $1 on BRANCH and starts its setup; prints "path|workspace id|root pane".
 ensure_worktree() {
-    local repo=$1 parent=${2:-} out path ws pane tab
+    local repo=$1 parent=${2:-} out path ws
     ws_config "$repo"
-    if git -C "$repo" rev-parse -q --verify "refs/heads/$BRANCH" >/dev/null \
-        || git -C "$repo" rev-parse -q --verify "refs/remotes/origin/$BRANCH" >/dev/null; then
-        # Existing branch: herdr can only create new ones, so check it out with git and let herdr open that worktree.
-        path=$(ws_worktree_base)/$(basename "$repo")/$NAME
-        git -C "$repo" worktree add -q "$path" "$BRANCH" >&2
-        out=$(herdr worktree open --cwd "$repo" --path "$path" --label "$NAME" --no-focus)
-    else
-        out=$(herdr worktree create --cwd "$repo" --branch "$BRANCH" --base "$WS_BASE_BRANCH" --label "$NAME" --no-focus)
-    fi
-    path=$(jq -r '.result.worktree.path' <<<"$out")
-    ws=$(jq -r '.result.workspace.workspace_id' <<<"$out")
-    pane=$(jq -r '.result.root_pane.pane_id // empty' <<<"$out")
-    tab=$(herdr tab create --workspace "$ws" --cwd "$path" --label setup --no-focus)
-    herdr pane run "$(jq -r '.result.root_pane.pane_id' <<<"$tab")" \
-        "${parent:+WS_PARENT='$parent' }'$WS_HOME/scripts/ws-setup.sh'" >/dev/null
-    echo "$path|$ws|$pane"
+    out=$(be_worktree "$repo" "$BRANCH" "$NAME" "$WS_BASE_BRANCH")
+    IFS='|' read -r path ws _ <<<"$out"
+    be_setup "$NAME" "$path" "$ws" "$parent"
+    echo "$out"
 }
 
 EXISTED=""; [[ ! -f "$MANIFEST" ]] || EXISTED=1
@@ -101,16 +91,16 @@ Breaks: ${BREAKS:-${WS_PLAN_BREAKS:-none}}
 Review: ${REVIEW:-${WS_REVIEW:-off}}
 Autonomous: ${AUTONOMY:-${WS_AUTONOMY:-off}}"
 # A takeover must not collide with the old orchestrator's name.
-ORCH=orch-$SLUG; ! herdr agent get "$ORCH" >/dev/null 2>&1 || ORCH=$ORCH-2
-mapfile -t ARGS < <(ws_agent_args "$WS_ORCHESTRATOR_AGENT" "$WS_ORCHESTRATOR_MODEL" "$WS_ORCHESTRATOR_EFFORT" "$WS_ORCHESTRATOR_ARGS")
-for _ in $(seq 10); do   # the root shell needs a moment before it takes a command
-    herdr agent start "$ORCH" --kind "$WS_ORCHESTRATOR_AGENT" --pane "$ROOT_PANE" ${ARGS[@]+-- "${ARGS[@]}"} >/dev/null 2>&1 && break
-    sleep 2
-done
-# A fresh worktree makes the agent ask whether to trust the folder (blocked): that is the user's call, so wait for it.
-if ! herdr agent prompt "$ORCH" "$PROMPT" >/dev/null 2>&1; then
-    echo "Orchestrator $ORCH waits for your input (e.g. 'trust this folder'): answer it in Herdr workspace $ROOT_WS. Waiting up to 10 min…"
-    herdr agent wait "$ORCH" --until idle --timeout 600000 >/dev/null
-    herdr agent prompt "$ORCH" "$PROMPT" >/dev/null
+ORCH=orch-$SLUG; [[ "$("$WS_HOME/scripts/ws-agent.sh" state "$ORCH")" == gone ]] || ORCH=$ORCH-2
+"$WS_HOME/scripts/ws-agent.sh" start "$ORCH" --cwd "$ROOT" --kind "$WS_ORCHESTRATOR_AGENT" --model "$WS_ORCHESTRATOR_MODEL" \
+    --effort "$WS_ORCHESTRATOR_EFFORT" --args "$WS_ORCHESTRATOR_ARGS" --ws "$NAME" --no-wait
+# The prompt is sent once the agent takes input (a fresh folder first asks "trust this folder": the user's call).
+# With core that runs as its own background terminal, so it also survives a closed ssh link.
+if [[ "$(ws_backend)" == core ]]; then
+    hc run --bg --no-parent --rm --name "dl-$SLUG" --cwd "$ROOT" --label "ws=$NAME" \
+        "$WS_HOME/scripts/ws-agent.sh" prompt "$ORCH" "$PROMPT" >/dev/null
+    echo "orchestrator: $ORCH (prompt follows once it is idle; if it asks for the folder trust: hc attach $ORCH)"
+else
+    "$WS_HOME/scripts/ws-agent.sh" prompt "$ORCH" "$PROMPT"
+    echo "orchestrator: $ORCH (workspace $ROOT_WS)"
 fi
-echo "orchestrator: $ORCH (workspace $ROOT_WS)"

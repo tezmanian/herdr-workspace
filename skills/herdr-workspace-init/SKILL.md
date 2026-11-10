@@ -12,6 +12,7 @@ The repo the agent runs in is the main project. `$WS` = the `scripts/` folder of
    - Tools missing (`herdr`, `git`, `jq`, `rsync`) or not inside a Herdr pane: tell the user how to fix it; do not install yourself.
    - Skills not available to another agent the user works with: `install.sh` of the herdr-workspace repo links them
      into that agent's skills folder.
+   - Backend: inside a Herdr pane → Herdr 1; otherwise herdr-core must run (`hc server status`). For a remote machine: `hc machine add <ssh host>`, install `hc`, the agents and these skills there, and check with `ws-doctor.sh --on <machine> --remote-dir <repo>`.
 2. **Repos:** ask which sub repos belong to the project (admin UI, frontend, app …) and where they are (folder next to
    the main project, or a path). Herdr needs no registration.
 3. **Worktree directory:** Herdr puts all worktrees under `~/.herdr/worktrees/<repo>/<name>`. Only if the user wants
