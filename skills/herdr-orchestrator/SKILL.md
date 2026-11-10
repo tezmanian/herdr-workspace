@@ -16,22 +16,12 @@ Backends: Herdr 1 (workspaces, panes) or herdr-core (`hc` terminals), picked by 
 Read the main project's `workspace.env` (path in your prompt) and, per sub repo, its config (`ws-status.sh` shows
 where). Prompt lines win over config keys.
 
-| Key | Use |
-|---|---|
-| `WS_PLAN` | `worker` / `self` / `none` |
-| `WS_PLAN_BREAKS` | planner steps followed by a review stop (prompt "Breaks"; `none` = no stops) |
-| `WS_PLAN_SKILL`, `WS_PLAN_BRIEF` | planner skills (in order) and brief |
-| `WS_IMPLEMENT_SKILL`, `WS_IMPLEMENT_BRIEF` | per repo: implementer skills and brief (`<spec>` = spec path) |
-| `WS_REVIEW` | `on` / `off` (prompt "Review") |
-| `WS_REVIEW_SKILL`, `WS_REVIEW_BRIEF`, `WS_REVIEW_ROUNDS` | reviewer skills, brief, max fix rounds (default 2) |
-| `WS_AUTONOMY` | `on` / `off` (prompt "Autonomous"): a decider answers instead of the user, see below |
-| `WS_DECIDE_SKILL`, `WS_DECIDE_BRIEF`, `WS_ESCALATE` | decider skills (e.g. `the-council`), brief, extra topics that still go to the user |
-| `WS_*_AFTER` | context hygiene, see below |
-| `WS_<ROLE>_AGENT`, `_MODEL`, `_EFFORT`, `_ARGS` | per role `PLAN`, `IMPLEMENT` (per repo), `REVIEW`, `DECIDE`: agent kind and native arguments |
+Keys (each is commented in `template/workspace.env` of the skill `herdr-workspace-config`): `WS_PLAN` (`worker` /
+`self` / `none`), `WS_PLAN_BREAKS`, `WS_PLAN_SKILL`/`_BRIEF`, `WS_IMPLEMENT_SKILL`/`_BRIEF` (per repo), `WS_REVIEW*`,
+`WS_AUTONOMY`, `WS_DECIDE_*`, `WS_ESCALATE`, `WS_*_AFTER` (context hygiene, below) and per role (`PLAN`, `IMPLEMENT`
+per repo, `REVIEW`, `DECIDE`) `WS_<ROLE>_AGENT`, `_MODEL`, `_EFFORT`, `_ARGS`.
 
-Native arguments of a worker: `--kind <WS_x_AGENT>` and after `--` the output of
-`source $WS/lib.sh; ws_agent_args <kind> <model> <effort> <extra args>` (claude: `--model M --effort E`; codex:
-`-m M -c model_reasoning_effort="E"`). Empty model = the agent's default; effort only together with a model.
+Empty model = the agent's default; effort only together with a model.
 Worker spec = "Use the skills <SKILL> in this order." (when set) + brief + ticket text + the report rule below; no
 skill = brief alone; no brief = write one from the ticket.
 
@@ -47,8 +37,8 @@ ws-agent.sh prompt <name> "<spec>" --wait         # waits until idle first; --wa
 ws-agent.sh state <name>                          # idle | working | blocked | done | error | unknown | gone
 ws-agent.sh read <name> [lines]   |  wait <name> [--timeout SEC]  |  list [<slug>-]  |  focus <name>
 ```
-`--cwd` is the worktree the worker is for (a sub repo's worktree for its implementer and reviewer); kind, model,
-effort and args come from the worker's `WS_<ROLE>_*` keys. Reuse a worker for fixes and later tasks (`prompt` again)
+`--cwd` is the worktree the worker is for (a sub repo's worktree for its implementer and reviewer); pass the worker's
+`WS_<ROLE>_AGENT`/`_MODEL`/`_EFFORT`/`_ARGS` as `--kind`/`--model`/`--effort`/`--args`. Reuse a worker for fixes and later tasks (`prompt` again)
 instead of starting a new one. Never close workspaces, tabs, panes or terminals you did not create. Workers keep
 running if you end; with herdr-core they also survive a closed ssh link on a remote machine.
 

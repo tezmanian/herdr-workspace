@@ -28,45 +28,22 @@ The main project's config also drives the orchestrator; each sub repo's config i
 
 ## Keys
 
-| Key | Meaning |
-|---|---|
-| `WS_BASE_BRANCH` | base for new branches (default `master`) |
-| `WS_SUBS` | main project: default sub repos (path, or folder name next to the main project) |
-| `WS_COPY` | untracked paths copied from the main checkout (no overwrite) |
-| `WS_COPY_PATTERNS` | rsync include patterns copied anywhere in the tree, e.g. `STATUS.md ai-docs/***` |
-| `WS_COPY_EXCLUDE` | names never copied (e.g. `worktrees`) |
-| `WS_CLONE` | big dirs cloned copy-on-write where the filesystem allows (`cp --reflink=auto`, APFS `cp -c`), else copied (`vendor`, `node_modules`) |
-| `WS_SETUP` / `WS_POST_SETUP` | commands run in the worktree after copying; env: `WS_MAIN`, `WS_CONFIG_DIR`, parent exports; append `KEY=value` to `$WS_EXPORT` to export for subs |
-| `WS_TEARDOWN` | command run in the worktree before removal |
-| `WS_KEEP` / `WS_KEEP_PATTERNS` | untracked paths/patterns offered for copy-back on removal (patterns default to `WS_COPY_PATTERNS`) |
-| `WS_IGNORED_ON_REMOVE` | `ask` (default) / `copy` / `delete` |
-| `WS_PLAN` | `worker` (default) / `self` / `none` |
-| `WS_PLAN_BREAKS` | planner steps followed by a review stop, e.g. `speckit-specify speckit-plan`; empty = straight to tasks |
-| `WS_PLAN_SKILL`, `WS_IMPLEMENT_SKILL` | skills/slash commands the workers run, in order; empty = none (brief only) |
-| `WS_PLAN_BRIEF`, `WS_IMPLEMENT_BRIEF` | worker briefs, project rules on top of the skill (`<spec>` = spec path) |
-| `WS_ORCHESTRATOR_AGENT` / `_MODEL` / `_EFFORT` / `_ARGS` | orchestrator: Herdr agent kind (default `claude`), model id, effort, extra native arguments |
-| `WS_PLAN_AGENT` / `_MODEL` / `_EFFORT` / `_ARGS` | planner, same |
-| `WS_IMPLEMENT_AGENT` / `_MODEL` / `_EFFORT` / `_ARGS` | implementer of this repo, same |
-| `WS_REVIEW` | `on` / `off`: code review after each implementer (main project; per start `--review on\|off`) |
-| `WS_REVIEW_SKILL`, `WS_REVIEW_BRIEF`, `WS_REVIEW_ROUNDS` | reviewer skills, brief (`<spec>` = spec path), max fix rounds (default 2) |
-| `WS_REVIEW_AGENT` / `_MODEL` / `_EFFORT` / `_ARGS` | reviewer, same (a different model or agent than the implementer finds more) |
-| `WS_AUTONOMY` | `on` / `off`: a Decider agent answers questions and approves the plan instead of the user (per start `--autonomous on\|off`); outward or risky decisions still go to the user |
-| `WS_DECIDE_SKILL`, `WS_DECIDE_BRIEF` | Decider skills (e.g. `the-council`, used for real trade-offs only) and brief |
-| `WS_ESCALATE` | extra topics that always go to the user, free text (e.g. "data migrations, pricing") |
-| `WS_DECIDE_AGENT` / `_MODEL` / `_EFFORT` / `_ARGS` | Decider, same |
-| `WS_PLANNER_AFTER` | command sent to the idle planner after its plan (default `/compact`; empty = none) |
-| `WS_IMPLEMENTER_AFTER`, `WS_IMPLEMENTER_AFTER_WHEN` | command for idle implementers (default `/clear`) and when: `workstream` (default, after review fixes) / `task` |
-| `WS_DECIDER_AFTER` | command for the Decider when its context grows (default empty) |
+`template/workspace.env` is the reference: every key is there with a comment. In groups:
+
+- **Checkout:** `WS_BASE_BRANCH`, `WS_SUBS` (main project: default sub repos, path or folder name next to it),
+  `WS_COPY`, `WS_COPY_PATTERNS` (rsync include patterns, e.g. `STATUS.md ai-docs/***`), `WS_COPY_EXCLUDE`, `WS_CLONE`
+  (big dirs, copy-on-write where the filesystem allows).
+- **Setup and removal:** `WS_SETUP` (runs in the worktree; env `WS_MAIN`, `WS_CONFIG_DIR`, the parent's exports; append
+  `KEY=value` to `$WS_EXPORT` to export for subs; chain commands with `;`), `WS_TEARDOWN`, `WS_KEEP`/`WS_KEEP_PATTERNS`
+  (untracked files offered for copy-back), `WS_IGNORED_ON_REMOVE` (`ask`/`copy`/`delete`).
+- **Orchestration (main project):** `WS_PLAN`, `WS_PLAN_BREAKS`, `WS_REVIEW*`, `WS_AUTONOMY`, `WS_DECIDE_*`, `WS_ESCALATE`,
+  `WS_*_SKILL`, `WS_*_BRIEF` (`<spec>` = spec path), context hygiene `WS_PLANNER_AFTER`, `WS_IMPLEMENTER_AFTER(_WHEN)`,
+  `WS_DECIDER_AFTER`. The scripts only read the first few; the orchestrator agent reads the rest from the file.
+- **Agents per role** (`ORCHESTRATOR`, `PLAN`, `IMPLEMENT` per repo, `REVIEW`, `DECIDE`): `WS_<ROLE>_AGENT`, `_MODEL`,
+  `_EFFORT`, `_ARGS`.
 
 Agent kinds are Herdr's (`herdr agent` lists them: `claude`, `codex`, `gemini`, `opencode` …). Models are provider
 model ids (e.g. `claude-opus-5-5`, `claude-sonnet-5-5`); empty = the agent's default. `_MODEL`/`_EFFORT` become native
 flags for `claude` (`--model`, `--effort`) and `codex` (`-m`, `-c model_reasoning_effort=…`); for other kinds only
 `--model`, so use `_ARGS` for the rest. Changes apply to workspaces started afterwards; a running orchestrator keeps
-what it read.
-
-## Backend settings
-
-Both backends (Herdr 1 and herdr-core) share the same keys. Herdr has no per-repo setup or archive hooks and no per-repo workspace directory: worktrees land in
-`~/.herdr/worktrees/<repo>/` (change with `[worktrees] directory` in `~/.config/herdr/config.toml`). `ws-start.sh`
-runs the setup itself in a "setup" tab; `ws-stop.sh` runs the teardown. Remove workspaces with `ws-stop.sh`, not in
-the Herdr UI, or the teardown (containers, VMs) is skipped.
+what it read. Both backends (Herdr 1 and herdr-core) share the same keys.

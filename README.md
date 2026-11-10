@@ -20,7 +20,7 @@ counterpart of [orca-workspace](https://github.com/tezmanian/orca-workspace)):
 
 ## Install
 
-Requirements: `git`, `jq`, `rsync`, bash and one backend: [Herdr](https://herdr.dev) 1 (`herdr` CLI, 0.9+; your agent runs in a
+Requirements: `git`, `jq`, `rsync`, bash 3.2+ and one backend: [Herdr](https://herdr.dev) 1 (`herdr` CLI, 0.9+; your agent runs in a
 Herdr pane, `HERDR_ENV=1`) or herdr-core (`hc`). `WS_BACKEND=herdr|core` forces one. Dependency dirs are cloned copy-on-write where the filesystem allows it, else copied.
 
 ```bash
@@ -39,7 +39,7 @@ Update with `git pull` (links follow). Then, in your main project inside Herdr, 
 > Status of PROJ-123 · add frontend · tear down workspace PROJ-123
 
 Scripts behind it (`skills/herdr-workspace/scripts/`): `ws-start.sh`, `ws-status.sh`, `ws-stop.sh`, `ws-setup.sh`,
-`ws-teardown.sh`, `ws-doctor.sh`.
+`ws-doctor.sh`, `ws-agent.sh` (workers). More walk-throughs: [examples/](examples/).
 
 ## herdr-core and remote machines
 

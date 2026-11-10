@@ -30,10 +30,10 @@ ws-start.sh <branch> [--ticket KEY] [--brief "<task or ticket text>"] [--breaks 
 - `--breaks`: planner review stops for this workspace (overrides `WS_PLAN_BREAKS`; "no breaks" → `none`).
 - `--review`: code review after each implementer on/off for this workspace (overrides `WS_REVIEW`).
 - `--autonomous`: a Decider agent answers instead of the user (overrides `WS_AUTONOMY`; "fully autonomous" → `on`).
-- Every worktree runs `ws-setup.sh` in a Herdr tab "setup"; sub setups wait for the main one and get its exports
+- Every worktree runs `ws-setup.sh` in the background (Herdr 1: a "setup" tab; core: a terminal `su-…`); sub setups wait for the main one and get its exports
   (e.g. `API_URL`). The orchestrator starts at once in the main workspace (agent `orch-<slug>`) with the configured model.
 
-Report the workspaces and that setup runs in the "setup" tabs (a first container or VM build — DDEV, Vagrant, Docker Compose — can take minutes).
+Report the workspaces and that setup runs in the background (a first container or VM build — DDEV, Vagrant, Docker Compose — can take minutes).
 
 ## Remote machines (herdr-core)
 
@@ -59,12 +59,12 @@ A sub repo shown with `config: none` gets a plain worktree; set it up with skill
 
 `ws-stop.sh` refuses on uncommitted changes. Untracked files from `WS_KEEP`/`WS_KEEP_PATTERNS` that differ from the
 main checkout: `ask` (default `WS_IGNORED_ON_REMOVE`) lists them and removes nothing (exit 2) — show the user the list
-and rerun with their choice. It runs `ws-teardown.sh` (`WS_TEARDOWN`), removes subs first, closes the Herdr
-workspaces and keeps all branches. Then the user tests locally on the branch.
+and rerun with their choice. It runs `WS_TEARDOWN` of each repo, removes subs first, closes the Herdr
+workspaces and keeps all branches; worktrees that vanished on disk are dropped from the manifest. Then the user tests locally on the branch.
 
-## Findings
-- Herdr has no setup/archive hooks, no repo registry and no parent/child worktrees: setup runs in a tab, teardown in `ws-stop.sh`, the manifest ties the workspace together.
-- `herdr worktree create` makes a new branch; an existing branch is checked out with `git worktree add` and then `herdr worktree open --path`; both open a Herdr workspace labelled with the name.
-- `herdr worktree remove` keeps the branch.
+**Always remove with `ws-stop.sh`, never in the Herdr UI:** Herdr has no archive hook, so only `ws-stop.sh` runs the teardown (containers, VMs).
+
+## Good to know
+- Herdr has no setup/archive hooks, repo registry or parent/child worktrees: setup runs in the background, teardown in `ws-stop.sh`, and the manifest ties the workspace together.
 - A new worktree folder makes Claude Code ask "trust this folder". Herdr 1 marks the agent `blocked`; herdr-core shows no status yet (`unknown`). Either way the user must confirm it (Herdr, or `hc attach <name>`); `ws-start.sh` / `ws-agent.sh prompt` wait for that (10 min) and then send. Never answer the dialog yourself.
 - herdr-core: terminals started from a Claude session inherit `CLAUDE_CODE_CHILD_SESSION` and then do not save transcripts; start the core from a clean shell (or set `CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1`).
