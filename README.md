@@ -1,7 +1,7 @@
 # herdr-workspace
 
 Agent skills that turn [Herdr](https://herdr.dev) into a multi-repo, multi-agent workspace runner (the Herdr
-counterpart of [orca-workspace](../orca-workspace)):
+counterpart of [orca-workspace](https://github.com/tezmanian/orca-workspace)):
 
 - **One command per ticket:** a worktree of the main project on the ticket's branch, worktrees in the other
   repos it touches (admin UI, frontend, app), each set up from the repo's own config and wired to the main one (API
@@ -24,7 +24,7 @@ Requirements: `git`, `jq`, `rsync`, bash and one backend: [Herdr](https://herdr.
 Herdr pane, `HERDR_ENV=1`) or herdr-core (`hc`). `WS_BACKEND=herdr|core` forces one. Dependency dirs are cloned copy-on-write where the filesystem allows it, else copied.
 
 ```bash
-git clone <this repo> ~/projects/herdr-workspace
+git clone https://github.com/tezmanian/herdr-workspace ~/projects/herdr-workspace
 ~/projects/herdr-workspace/install.sh   # links the skills into ~/.claude/skills, ~/.agents/skills, ~/.codex/skills (those that exist)
 ```
 Update with `git pull` (links follow). Then, in your main project inside Herdr, ask your agent:
