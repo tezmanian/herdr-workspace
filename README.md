@@ -39,7 +39,7 @@ Update with `git pull` (links follow). Then, in your main project inside Herdr, 
 > Status of PROJ-123 · add frontend · tear down workspace PROJ-123
 
 Scripts behind it (`skills/herdr-workspace/scripts/`): `ws-start.sh`, `ws-status.sh`, `ws-stop.sh`, `ws-setup.sh`,
-`ws-doctor.sh`, `ws-agent.sh` (workers). More walk-throughs: [examples/](examples/).
+`ws-doctor.sh`, `ws-agent.sh` (workers: names survive an orchestrator `/clear` via a registry `workers.tsv`; `prompt --report <file>` and `wait-report <file>` wait for a worker's `REPORT`/`QUESTION` line, not just the end of its turn). More walk-throughs: [examples/](examples/).
 
 ## herdr-core and remote machines
 
