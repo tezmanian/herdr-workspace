@@ -3,6 +3,20 @@ shopt -s inherit_errexit 2>/dev/null || true   # bash 4.4+: a failing command in
 WS_HOME=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # User-level configs for repos that should not carry their own.
 WS_USER_HOME=${HERDR_WORKSPACE_HOME:-$HOME/.config/herdr-workspace}
+# Other environment switches: WS_BACKEND=herdr|core, HERDR_CONFIG_PATH (Herdr's config.toml, for the worktree folder),
+# HERDR_WORKSPACE_STATE (worker registry outside a workspace, default ~/.local/state/herdr-workspace),
+# WS_REMOTE_SCRIPTS (scripts folder on the --on machine), WS_REPORT_TIMEOUT (seconds a report wait lasts, default 1800).
+
+# ws_help "$@": with -h/--help as first argument prints the comment block at the top of the script and exits.
+ws_help() {
+    case ${1:-} in -h | --help) awk 'NR > 1 { if (!/^#/) exit; sub(/^# ?/, ""); print }' "$0"; exit 0 ;; esac
+}
+
+# ws_check_name <workspace name>: it becomes a file and folder name, so only [A-Za-z0-9._-], starting with a letter or digit.
+ws_check_name() {
+    [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] \
+        || { echo "Invalid workspace name '$1': use letters, digits, . _ - (start with a letter or digit); pass --name." >&2; exit 1; }
+}
 
 # Main checkout of the repository containing $1.
 ws_main() { git -C "$1" worktree list --porcelain | sed -n '1s/^worktree //p'; }
@@ -102,7 +116,9 @@ ws_detect_backend() {
 
 # Run a script of this skill on another machine (hc machine ls) when the args carry `--on <machine> --remote-dir <repo>`.
 # Call first, as: ws_remote "$@". Terminals started there keep running when this command or the ssh link ends.
-# The skills must be installed there too (install.sh). hc exec ends a command after 10 minutes at most.
+# The skills must be installed there too (install.sh; WS_REMOTE_SCRIPTS = their scripts folder there if it is elsewhere).
+# hc exec ends a command after 10 minutes at most. --remote-dir is a path on that machine: a leading ~ is resolved
+# there (also when the local shell already expanded it to the local home).
 ws_remote() {
     local a=("$@") i M="" D="" out=()
     for ((i = 0; i < ${#a[@]}; i++)); do
@@ -116,11 +132,16 @@ ws_remote() {
     done
     [[ -n "$M" ]] || return 0
     [[ -n "$D" ]] || { echo "--on $M needs --remote-dir <repo path on $M>." >&2; exit 1; }
-    exec hc exec --on "$M" --cwd "$D" --timeout 600 bash -lc \
-        'for d in "$HOME/.claude/skills" "$HOME/.agents/skills" "$HOME/.codex/skills"; do
-             [[ -x "$d/herdr-workspace/scripts/$0" ]] && exec "$d/herdr-workspace/scripts/$0" "$@"
-         done; echo "herdr-workspace skills not found on this machine (install.sh)" >&2; exit 1' \
-        "$(basename "$0")" ${out[@]+"${out[@]}"}
+    if [[ "$D" == "$HOME" ]]; then D="~"; elif [[ "$D" == "$HOME"/* ]]; then D="~/${D#"$HOME"/}"; fi
+    exec hc exec --on "$M" --timeout 600 bash -lc \
+        'D=$1 S=$2; shift 2
+         case $D in "~") D=$HOME ;; "~/"*) D=$HOME/${D#??} ;; esac
+         cd "$D" || { echo "--remote-dir $D not found on this machine" >&2; exit 1; }
+         for d in ${S:+"$S"} "$HOME/.claude/skills/herdr-workspace/scripts" "$HOME/.agents/skills/herdr-workspace/scripts" \
+             "$HOME/.codex/skills/herdr-workspace/scripts"; do
+             [[ -x "$d/$0" ]] && exec "$d/$0" "$@"
+         done; echo "herdr-workspace scripts not found on this machine (install.sh, or WS_REMOTE_SCRIPTS)" >&2; exit 1' \
+        "$(basename "$0")" "$D" "${WS_REMOTE_SCRIPTS:-}" ${out[@]+"${out[@]}"}
 }
 
 # be_worktree <repo> <branch> <name> <base>: creates or checks out the worktree, prints "path|workspace id".
@@ -157,10 +178,16 @@ be_setup() {
     fi
 }
 
-# be_state <agent>: idle | working | blocked | done | error | unknown | gone
+# be_state <agent>: idle | working | blocked | done | error | unknown | gone (always exactly one word)
 be_state() {
-    if [[ $WS_BACKEND == herdr ]]; then herdr agent get "$1" 2>/dev/null | jq -r '.result.agent.agent_status // "gone"' || echo gone
-    else hc get "$1" --json 2>/dev/null | jq -r '.status.state // "unknown"' || echo gone; fi
+    local s
+    if [[ $WS_BACKEND == herdr ]]; then
+        s=$(herdr agent get "$1" 2>/dev/null | jq -r '.result.agent.agent_status // "gone"' 2>/dev/null) || s=""
+    else
+        s=$(hc get "$1" --json 2>/dev/null | jq -r '.status.state // "unknown"' 2>/dev/null) || s=""
+    fi
+    s=${s%%$'\n'*}
+    echo "${s:-gone}"
 }
 
 # be_wait_idle <agent> [seconds]: until the agent can take input. A fresh folder makes Claude ask "trust this folder":
@@ -181,11 +208,16 @@ be_wait_idle() {
     return 1
 }
 
-# be_kill_dir <path>: ends every core terminal working in that worktree (setup logs, agents, shells).
+# be_kill_dir <path>: ends every core terminal working in that worktree (setup logs, agents, shells), except the
+# terminal this script runs in (an orchestrator removing its own workspace must live long enough to finish).
 be_kill_dir() {
     [[ $WS_BACKEND == core ]] || return 0
     local a
     for a in $(hc ls --all --json | jq -r --arg p "$1" '.terminals[] | select(.cwd == $p or (.cwd | startswith($p + "/"))) | .address'); do
+        if [[ -n "${HC_TERMINAL_ID:-}" && "$a" == "$HC_TERMINAL_ID" ]]; then
+            echo "Left running: terminal $a (this command runs in it); end it yourself with hc kill $a." >&2
+            continue
+        fi
         hc kill "$a" >/dev/null 2>&1 || true
         hc rm "$a" >/dev/null 2>&1 || true
     done

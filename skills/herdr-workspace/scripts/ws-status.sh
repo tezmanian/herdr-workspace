@@ -3,6 +3,7 @@
 # Usage (inside any checkout of the main project): ws-status.sh [name] [--on MACHINE --remote-dir DIR]
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
+ws_help "$@"
 ws_remote "$@"
 MAIN=$(ws_main .)
 DIR=$(ws_dir "$MAIN")
@@ -26,7 +27,7 @@ for f in "$DIR"/*.env; do
     FOUND=1
     echo "== $n"
     show "$(ws_get "$MAIN" "$n" main)" "" "  "
-    for sub in $(ws_children "$MAIN" "$n"); do show "$sub" "  └ " "      "; done
+    while IFS= read -r sub; do [[ -z "$sub" ]] || show "$sub" "  └ " "      "; done < <(ws_children "$MAIN" "$n")
     echo
 done
 ((FOUND)) || { echo "No workspace ${1:-}."; exit 1; }

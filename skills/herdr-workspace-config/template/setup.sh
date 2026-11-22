@@ -9,5 +9,5 @@ set -euo pipefail
 # Wire to the main project when it exported an API, e.g. a Next.js app:
 # [[ -z "${API_URL:-}" ]] || echo "NEXT_PUBLIC_API_URL=$API_URL" > .env.local
 
-# Own dev port per slot so parallel workspaces don't collide, e.g.:
+# Own dev port per slot so parallel workspaces don't collide (plain KEY=value lines, no quotes), e.g.:
 # echo "DEV_PORT=$((3000 + ${WS_SLOT:-10}))" >> "$WS_EXPORT"

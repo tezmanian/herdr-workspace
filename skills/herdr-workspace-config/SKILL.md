@@ -1,6 +1,6 @@
 ---
 name: herdr-workspace-config
-description: "Creates or changes the herdr-workspace config of a repo (workspace.env + setup.sh): what a worktree copies and clones, its setup and teardown (containers or VMs such as DDEV, Vagrant or Docker Compose, npm, DB import), how a sub repo connects to the main project (API URL, ports), planner/implementer skills, briefs, agents and models. Use when the user says \"set up <repo> for workspaces\", \"workspace config\", \"planner should use Opus\", \"different model for the implementer\", or ws-status shows config: none."
+description: "Creates or changes the herdr-workspace config of a repo (workspace.env + setup.sh): what a worktree copies and clones, its setup and teardown (containers or VMs such as DDEV, Vagrant or Docker Compose, npm, DB import), how a sub repo connects to the main project (API URL, ports), planner/implementer skills, briefs, agents and models. Use for a single repo, also after the project was initialised (first-time setup of a whole project: herdr-workspace-init), when the user says \"set up REPO for workspaces\", \"workspace config\", \"planner should use Opus\", \"different model for the implementer\", or ws-status shows config: none."
 ---
 
 # herdr-workspace config
@@ -30,12 +30,14 @@ The main project's config also drives the orchestrator; each sub repo's config i
 
 `template/workspace.env` is the reference: every key is there with a comment. In groups:
 
-- **Checkout:** `WS_BASE_BRANCH`, `WS_SUBS` (main project: default sub repos, path or folder name next to it),
+- **Checkout:** `WS_BASE_BRANCH` (default `master`: set it when the repo uses `main` or another base), `WS_SUBS` (main project: default sub repos, path or folder name next to it),
   `WS_COPY`, `WS_COPY_PATTERNS` (rsync include patterns, e.g. `STATUS.md ai-docs/***`), `WS_COPY_EXCLUDE`, `WS_CLONE`
   (big dirs, copy-on-write where the filesystem allows).
 - **Setup and removal:** `WS_SETUP` (runs in the worktree; env `WS_MAIN`, `WS_CONFIG_DIR`, the parent's exports; append
-  `KEY=value` to `$WS_EXPORT` to export for subs; chain commands with `;`), `WS_TEARDOWN`, `WS_KEEP`/`WS_KEEP_PATTERNS`
-  (untracked files offered for copy-back), `WS_IGNORED_ON_REMOVE` (`ask`/`copy`/`delete`).
+  `KEY=value` to `$WS_EXPORT` to export for subs — one per line, taken literally: no quotes, no `$(…)`, other lines are
+  ignored; chain commands with `;`), `WS_TEARDOWN` (a failure is only warned about), `WS_KEEP` (paths) /
+  `WS_KEEP_PATTERNS` (rsync patterns, default `WS_COPY_PATTERNS`): untracked files offered for copy-back,
+  `WS_IGNORED_ON_REMOVE` (`ask`/`copy`/`delete`).
 - **Orchestration (main project):** `WS_PLAN`, `WS_PLAN_BREAKS`, `WS_REVIEW*`, `WS_AUTONOMY`, `WS_DECIDE_*`, `WS_ESCALATE`,
   `WS_*_SKILL`, `WS_*_BRIEF` (`<spec>` = spec path), context hygiene `WS_PLANNER_AFTER`, `WS_IMPLEMENTER_AFTER(_WHEN)`,
   `WS_DECIDER_AFTER`. The scripts only read the first few; the orchestrator agent reads the rest from the file.

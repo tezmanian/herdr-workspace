@@ -1,6 +1,6 @@
 ---
 name: herdr-workspace-init
-description: "One-time setup of herdr-workspace for a project: checks tools, picks the sub repos, creates each repo's config and verifies everything with ws-doctor. Use when the user says \"set up herdr-workspace\", \"init herdr workspace\", \"set up workspaces for this project\", \"/herdr-workspace-init\", or ws-doctor reports FAIL. Requires HERDR_ENV=1."
+description: "One-time setup of herdr-workspace for a project: checks tools, picks the sub repos, creates each repo's config and verifies everything with ws-doctor. Use when the user says \"set up herdr-workspace\", \"init herdr workspace\", \"set up workspaces for this project\", \"/herdr-workspace-init\", or ws-doctor reports FAIL. Needs a Herdr pane (HERDR_ENV=1) or a running herdr-core (hc)."
 ---
 
 # Set up herdr-workspace for a project
@@ -9,14 +9,17 @@ The repo the agent runs in is the main project. `$WS` = the `scripts/` folder of
 `~/.claude/skills/herdr-workspace/scripts`). Ask before anything outward or outside the repos involved.
 
 1. **Check:** `$WS/ws-doctor.sh` — fix every `FAIL` before going on.
-   - Tools missing (`herdr`, `git`, `jq`, `rsync`) or not inside a Herdr pane: tell the user how to fix it; do not install yourself.
+   - Tools missing (`git`, `jq`, `rsync`), no backend (neither inside a Herdr pane nor a running herdr-core), or a
+     configured agent program (`claude`, `codex` …) not on PATH: tell the user how to fix it; do not install yourself.
+   - Base branch not found: the default is `master`; set `WS_BASE_BRANCH` in the repo's config (step 4), e.g. `main`.
    - Skills not available to another agent the user works with: `install.sh` of the herdr-workspace repo links them
      into that agent's skills folder.
    - Backend: inside a Herdr pane → Herdr 1; otherwise herdr-core must run (`hc server status`). For a remote machine: `hc machine add <ssh host>`, install `hc`, the agents and these skills there, and check with `ws-doctor.sh --on <machine> --remote-dir <repo>`.
 2. **Repos:** ask which sub repos belong to the project (admin UI, frontend, app …) and where they are (folder next to
    the main project, or a path). Herdr needs no registration.
 3. **Worktree directory:** Herdr puts all worktrees under `~/.herdr/worktrees/<repo>/<name>`. Only if the user wants
-   another place, set `[worktrees] directory` in `~/.config/herdr/config.toml` (global, all projects), then `herdr server reload-config`.
+   another place, set `[worktrees] directory` in `~/.config/herdr/config.toml` (global, all projects; the scripts read
+   the file named by `HERDR_CONFIG_PATH` if that is set), then `herdr server reload-config`.
 4. **Configs:** per repo with skill `herdr-workspace-config` — where it lives (`.herdr/workspace/` to share with the
    team, `.agents/workspace/` private, `~/.config/herdr-workspace/projects/<repo>/` personal), what it copies, clones,
    sets up, tears down, how a sub repo reaches the main project. Main project: also planner, implementer, review,

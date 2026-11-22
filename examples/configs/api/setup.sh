@@ -3,7 +3,7 @@
 set -euo pipefail
 
 NAME=$(basename "$PWD")                                   # the workspace name, e.g. PROJ-123
-SLOT=$(( $(pwd | cksum | cut -d' ' -f1) % 80 + 10 ))       # stable per worktree, 10..89
+SLOT=$(( $(pwd | cksum | cut -d' ' -f1) % 80 + 10 ))       # stable per worktree, 10..89 (two can share one)
 
 ddev config --project-name "api-$(echo "$NAME" | tr 'A-Z_' 'a-z-')" --project-type php >/dev/null
 ddev start
