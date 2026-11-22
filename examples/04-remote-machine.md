@@ -23,7 +23,8 @@ $WS/ws-doctor.sh --on devbox --remote-dir ~/projects/api
 ```bash
 $WS/ws-start.sh PROJ-123-export-csv --ticket PROJ-123 --sub web --on devbox --remote-dir ~/projects/api
 ```
-`--remote-dir` is the main project **on the box**. Worktrees, setup, orchestrator and workers all run there.
+`--remote-dir` is the main project **on the box**; `~` stands for the home directory there, even if your shell
+expands it to your local home first. Worktrees, setup, orchestrator and workers all run there.
 
 ## Look in, answer, leave
 

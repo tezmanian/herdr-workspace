@@ -2,9 +2,12 @@
 # Prepares the worktree in the current directory (ws-start.sh runs it in the background). Copies untracked files from
 # the main checkout, waits for the parent workspace (sub repos build on its exports), runs the project setup and writes
 # the state file last, so its existence means "ready"; a failure leaves workspace.env.failed. Safe to rerun.
-# WS_PARENT=<parent worktree> (set by ws-start.sh, remembered in the git dir for reruns).
+# WS_PARENT=<parent worktree> (set by ws-start.sh, remembered in the git dir for reruns). WS_WORKTREE_PATH=<worktree>
+# runs it for that worktree instead of the current directory.
+# Usage (inside the worktree): ws-setup.sh
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
+ws_help "$@"
 cd "${WS_WORKTREE_PATH:-$PWD}"
 MAIN=$(ws_main .)
 [[ "$MAIN" != "$PWD" ]] || { echo "Run inside a worktree, not the main checkout."; exit 1; }
@@ -53,9 +56,11 @@ if [[ -n "$PARENT" ]]; then
         sleep 10
     done
     [[ -f "$PARENT_STATE" ]] || { echo "Parent setup did not finish within 30 minutes."; exit 1; }
-    set -a
-    source "$PARENT_STATE"
-    set +a
+    # The parent's exports are data, not shell code: take plain KEY=value lines literally, never source the file.
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then export "$line"
+        elif [[ -n "$line" && "$line" != \#* ]]; then echo "Ignored line in $PARENT_STATE (not KEY=value): $line" >&2; fi
+    done < "$PARENT_STATE"
 fi
 
 export WS_MAIN=$MAIN WS_EXPORT="$STATE.tmp"

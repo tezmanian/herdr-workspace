@@ -6,7 +6,7 @@ description: "Playbook for the orchestrator agent of a Herdr workspace started b
 # Orchestrator of a Herdr workspace
 
 Your prompt names start mode (`new` / `resume`), workspace, branch, main worktree and Herdr workspace id, sub worktrees
-(`path|workspace id`; the id is empty with herdr-core), name slug, workspace files folder (`$FILES`), ticket, task, config file, plan mode, stops
+(`path|workspace id`; the id is empty with herdr-core), name slug, workspace files folder (written `$FILES` below: a placeholder, not an environment variable — put the path from your prompt in its place), ticket, task, config file, plan mode, stops
 ("Breaks"), review and autonomy ("Autonomous"). Do no code work yourself. Workspace commands (status, add/remove
 sub): skill `herdr-workspace`; `$WS` below = the `scripts/` folder of that skill (e.g. `~/.claude/skills/herdr-workspace/scripts`).
 Backends: Herdr 1 (workspaces, panes) or herdr-core (`hc` terminals), picked by `ws-agent.sh`; for raw control see skill `herdr` or `hc --help`.
@@ -28,7 +28,7 @@ skill = brief alone; no brief = write one from the ticket.
 ## Workers
 
 A worker is an agent in its own pane (Herdr 1) or terminal (herdr-core), named `<slug>-plan`, `<slug>-impl-<repo>`,
-`<slug>-review-<repo>`, `<slug>-decider` (`[a-z][a-z0-9_-]{0,31}`; repo part shortened). Use `$WS/ws-agent.sh`, which
+`<slug>-review-<repo>`, `<slug>-decider` (`[a-z][a-z0-9_-]{0,31}`, enforced by `start`; repo part shortened). Use `$WS/ws-agent.sh`, which
 is the same on both backends:
 
 ```bash
@@ -36,7 +36,7 @@ ws-agent.sh start <name> --cwd <worktree> [--kind K] [--model M] [--effort E] [-
 ws-agent.sh prompt <name> "<spec>" --wait         # waits until idle first; --wait blocks until the turn ends
 ws-agent.sh state <name>                          # idle | working | blocked | done | error | unknown | gone
 ws-agent.sh prompt <name> "<spec>" --report <file> [--until-report] [--timeout SEC]   # see "Waiting"
-ws-agent.sh wait-report <file> [--any <more files>] [--timeout SEC] [--fresh]
+ws-agent.sh wait-report <file> [--any <more files>] [--agent <name>]... [--timeout SEC] [--fresh]
 ws-agent.sh read <name> [lines]   |  wait <name> [--timeout SEC]  |  list [<slug>-]  |  focus <name>
 ```
 `--cwd` is the worktree the worker is for (a sub repo's worktree for its implementer and reviewer); pass the worker's
@@ -44,11 +44,12 @@ ws-agent.sh read <name> [lines]   |  wait <name> [--timeout SEC]  |  list [<slug
 instead of starting a new one. Never close workspaces, tabs, panes or terminals you did not create. Workers keep
 running if you end; with herdr-core they also survive a closed ssh link on a remote machine.
 
-**Registry (names survive `/clear`):** `start` records `name -> terminal id` in `$FILES/workers.tsv` (without `$FILES`:
+**Registry (names survive `/clear`):** `start … --ws <workspace>` records `name -> terminal id` in
+`$FILES/workers.tsv` (always pass `--ws`; without it, or outside the repo, the row goes to
 `~/.local/state/herdr-workspace/<workspace>/workers.tsv`). Every command first tries the name, then the registry (looked
-up in `$FILES`, the repo's `herdr-workspace/*/` folders and the state folder), so a name Herdr forgot still reaches the
-pane; `list` shows such workers as `(via registry)`, a dead pane as `gone (registry: dead)`. Raw pane IDs (`w3:p2`) work
-as names too. After your own `/clear` or restart, read `$FILES/state.md`, then `ws-agent.sh list <slug>-`; do not start
+up in the repo's `herdr-workspace/*/` folders and the state folder), so a name Herdr forgot still reaches the
+pane; `list` shows such workers as `(via registry)`, a dead pane as `gone (registry: dead)`. With Herdr 1 a raw pane ID
+(`w3:p2`) works as a name too. After your own `/clear` or restart, read `$FILES/state.md`, then `ws-agent.sh list <slug>-`; do not start
 a second worker for a name that is only "lost".
 
 **Waiting:** run each `ws-agent.sh prompt … --wait` as a background Bash command (`run_in_background`); you are
@@ -59,74 +60,45 @@ a return, check `ws-agent.sh state <name>`:
   "trust this folder": the user's call, tell them via Attention): `ws-agent.sh read <name> 80`, then answer as under
   "Questions". Never type into a dialog on a guess.
 - a timeout → inspect with `read` before resending; the prompt may have arrived.
+- exit 1 with "was not sent" → the prompt did not reach the worker (blocked at a dialog, or gone): nothing runs, so do
+  not wait for a report; fix the cause and send again. A "Warning: sending … reported an error" means: check with `read`.
 
 `--wait` returns when the agent's *turn* ends, which is not "finished": a worker that waits for its own background run
 (tests, a build) ends its turn too. Add `--report <file>` (the worker's report path): after the turn the script checks
 that the file is newer than the prompt and its last non-empty line starts with `REPORT` or `QUESTION`. If yes it prints
 the state and `REPORT <file>` (or `QUESTION …`). If not it prints `still-working` and exits **3**; then wait again
-(`wait-report`) instead of treating it as done. `--until-report` keeps waiting for the file itself (`--timeout SEC`
-limits it, exit 4 = timeout; exit 5 = worker blocked, error or gone: look with `read`).
-`ws-agent.sh wait-report <file> [--any <more files>] [--timeout SEC] [--fresh]` replaces hand-made until loops: it
-blocks until one of the files ends with `REPORT`/`QUESTION`, prints `<TYPE> <path>` (exit 4 on timeout); `--fresh`
-ignores reports that already existed. Run it in the background like `prompt … --wait`; one call can watch all workers'
-report files.
+(`wait-report`) instead of treating it as done. `--until-report` keeps waiting for the file itself (exit 4 = timeout;
+exit 5 = worker blocked, error or gone: look with `read`).
+`ws-agent.sh wait-report <file> [--any <more files>] [--agent <name>]... [--timeout SEC] [--fresh]` replaces hand-made
+until loops: it blocks until one of the files ends with `REPORT`/`QUESTION` and prints `<TYPE> <path>`. Run it in the
+background like `prompt … --wait`; one call can watch all workers' report files. Rules for every report wait:
+- It never waits forever: after 30 minutes (`--timeout SEC`, `WS_REPORT_TIMEOUT`; `--timeout 0` = no limit, avoid it) it
+  prints `timeout` and exits **4**. A timeout is a prompt to look (`state`, `read`), not a failure of the worker.
+- Name the workers with `--agent <name>` (one per watched file): if one is `blocked`, in `error` or `gone` it prints
+  `<state> <name>` and exits **5**, instead of waiting for a report that cannot come.
+- A report file that already ends with `REPORT`/`QUESTION` counts at once. When you wait for a *new* report from a
+  worker that reported before (after an answer, a fix round, a restart of the watcher), add `--fresh` — it ignores
+  what existed when the wait began; `prompt … --report` does that by itself.
 
-**Report rule** (append to every worker spec): "When finished, write your result as Markdown to `$FILES/reports/<name>.md`
-(outcome, evidence such as tests and commits, open points) and end your turn with the single line `REPORT <path>`.
-If you need a decision, do not guess: write the question to that file, end with `QUESTION <path>` and wait." Read the
-file, not the terminal scrollback. Write each report in one go (the last line is the marker), so `wait-report` never
-sees a half-written one.
+**Report rule** (append to every worker spec, with the real path): "When finished, write your result as Markdown to
+`$FILES/reports/<name>.md` (outcome, evidence such as tests and commits, open points), in one go. The last line of
+that file must be exactly `REPORT <path>`: plain text, no formatting, nothing after it. If you need a decision, do not
+guess: write the question to that file instead, with the last line `QUESTION <path>`, and wait. If you only wait for
+your own background run (tests, build), finish it first, then report." The marker is the last line *of the file* —
+that is all the scripts look at; what the worker says in its chat does not count. Read the file, not the terminal
+scrollback.
 
-## Several phases with dependencies and a collecting branch
+## Several phases, collecting branch, spec template
 
-For a plan with phases that build on each other (typical for a milestone with several features), use **one collecting
-branch and one pull request**, not one PR per phase.
+A plan with phases that build on each other (one collecting branch and one pull request, merges by the workers,
+isolation and load limits per worker) and the fill-in spec template for a worker: read
+[references/phases.md](references/phases.md) before you start the first implementer of such a plan or write a spec.
 
-1. Create the collecting branch (`feat/<milestone>`) from the base and push it once. Each phase gets its own branch
-   and worktree, started in dependency order (`ws-start.sh … --sub` / `ws-agent.sh start`); a phase starts from the
-   collecting branch as soon as the phases it depends on are in it.
-2. A finished phase is merged **by its own worker**: `git merge --no-ff <phase-branch>` into the collecting branch and
-   push. A branch can be checked out in one worktree only, so the worker merges on a detached HEAD and pushes by ref:
-   ```bash
-   git fetch origin && git checkout --detach origin/<collecting-branch>
-   git merge --no-ff <phase-branch> -m "merge: <phase>"
-   # gates again if the merge was not trivial, then:
-   git push origin HEAD:refs/heads/<collecting-branch>
-   ```
-   A rejected push means someone else merged first: fetch, redo the merge, push again.
-3. Tell the other running workers after each merge: "Rebase onto `origin/<collecting-branch>`, rerun your gates,
-   continue." Do it per worker with `ws-agent.sh prompt … --report` (they report when done); never mid-test-run.
-4. The merge into `main` (or the base) is for the human only. The final report names the collecting branch and its PR.
-
-**Isolation per worker.** Each worker gets its own ports, its own Postgres (or database) and its own Compose project
-name (`-p <slug>-<phase>`), so parallel gate runs cannot collide; put the values in its spec.
-
-**Load.** At most **2** parallel full gate runs (build, all tests, containers); further workers wait or only write
-code. Say in the spec which worker may run the full gates now, and release the next one when a report arrives.
-
-**Watchers.** After every report (and after every answer you send), start the next `wait-report` / `prompt --report` in
-the background right away, with the report files of all running workers, and act on the result at once: answer a
-`QUESTION`, start the dependent phase, order a rebase, update `state.md`. Do not wait for the user to ask "what is
-going on". A watcher that returned `still-working` (exit 3) is not an answer: look at `ws-agent.sh read` and wait again.
-
-## Spec template for a worker
-
-Fill it per worker; the planner and reviewer variants drop what does not apply.
-
-```text
-Worktree: <path> (branch <phase-branch>, base <collecting-branch or main>). Work only there.
-Skills: use <skills> in this order. <brief, ticket or spec path, STATUS.md for test data and findings>
-Task: <what, with the done criteria>
-Commits: small and thematic, `<type>(<area>): <summary>` in the project's language; never push except as stated below.
-Gates before every report: <build / lint / typecheck / tests, the exact commands>; at most 2 workers run the full
-  gates at once, you are <allowed | not allowed> to now.
-Ports and services: <ports, database, Compose project name for this worker>.
-Merge: <none | after done: --no-ff into <collecting-branch> on a detached HEAD, push HEAD:refs/heads/<collecting-branch>>.
-Never touch: other workers' panes and worktrees, the base branch, shared rules.
-Report: write it to `$FILES/reports/<name>.md` (outcome, evidence, open points) in one go; the last line is
-  `REPORT <path>`, or `QUESTION <path>` if you need a decision (then wait). Also do this when you only wait for a
-  background run: finish the run first, then report.
-```
+**Watchers.** After every report (and after every answer you send), start the next `wait-report` in the background
+right away — with `--fresh`, the report files of all running workers (`--any`) and their names (`--agent`) — and act on
+the result at once: answer a `QUESTION`, start the dependent phase, order a rebase, update `state.md`. Do not wait for
+the user to ask "what is going on". Exit 3 (`still-working`), 4 (`timeout`) and 5 (`blocked`/`error`/`gone <name>`) are
+not answers: look at `ws-agent.sh read <name>`, deal with it, and start the watcher again.
 
 ## Attention
 
@@ -144,7 +116,7 @@ through the registry (above).
 1. **Ticket:** fetch the ticket text with your tools if a key is given.
 2. **Plan** (`WS_PLAN`):
    - `worker`: start the planner (anchor = your pane) with the spec above plus the list of sub repos. For each step in
-     the stops add: "After <step>: summarize the result in 3 lines, end your turn with `QUESTION <path>` and wait for
+     the stops add: "After <step>: write a 3-line summary to your report file with the last line `QUESTION <path>` and wait for
      the user in this chat; continue only on their go, revise on their feedback."
    - `self`: plan yourself with the same spec, then ask the user for approval.
    - `none`: the plan exists (e.g. `specs/<KEY>-*/tasks.md`); go to step 4.

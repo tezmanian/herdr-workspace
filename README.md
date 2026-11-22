@@ -39,14 +39,15 @@ Update with `git pull` (links follow). Then, in your main project inside Herdr, 
 > Status of PROJ-123 · add frontend · tear down workspace PROJ-123
 
 Scripts behind it (`skills/herdr-workspace/scripts/`): `ws-start.sh`, `ws-status.sh`, `ws-stop.sh`, `ws-setup.sh`,
-`ws-doctor.sh`, `ws-agent.sh` (workers: names survive an orchestrator `/clear` via a registry `workers.tsv`; `prompt --report <file>` and `wait-report <file>` wait for a worker's `REPORT`/`QUESTION` line, not just the end of its turn). More walk-throughs: [examples/](examples/).
+`ws-doctor.sh`, `ws-agent.sh` (workers: names survive an orchestrator `/clear` via a registry `workers.tsv`; `prompt --report <file>` and `wait-report <file>` wait for a worker's `REPORT`/`QUESTION` line, not just the end of its turn, for 30 minutes at most unless `--timeout` says otherwise). Each script prints its usage with `--help`. More walk-throughs: [examples/](examples/).
 
 ## herdr-core and remote machines
 
 With herdr-core every worker is a terminal that keeps running without any client attached. `--on <machine>` runs a
 script on a saved machine (`hc machine add <ssh host>`), so a workspace can live and keep working on a remote box
 while you are offline: `ws-start.sh PROJ-1 --on devbox --remote-dir ~/projects/api`, later `hc attach devbox/<name>`.
-The remote machine needs `hc`, the agents, the repos and these skills (`install.sh`).
+`--remote-dir` is a path on that machine (`~` = its home there). The remote machine needs `hc`, the agents, the repos
+and these skills (`install.sh`; elsewhere: `WS_REMOTE_SCRIPTS=<scripts folder there>`).
 
 ## Differences to orca-workspace
 
@@ -62,4 +63,11 @@ The remote machine needs `hc`, the agents, the repos and these skills (`install.
 Per repo, first found wins: `<repo>/.herdr/workspace/workspace.env` (shared with the team),
 `<repo>/.agents/workspace/workspace.env` (private), `~/.config/herdr-workspace/projects/<repo>/workspace.env`
 (personal; override the base with `HERDR_WORKSPACE_HOME`). Template and key reference: `skills/herdr-workspace-config/`.
+`WS_BASE_BRANCH` defaults to `master`; set it for repos with another base (`ws-doctor.sh` fails otherwise).
+
+Environment switches: `WS_BACKEND` (`herdr`/`core`), `HERDR_WORKSPACE_HOME` (personal configs), `HERDR_WORKSPACE_STATE`
+(worker registry outside a workspace, default `~/.local/state/herdr-workspace`), `HERDR_CONFIG_PATH` (Herdr's
+`config.toml`, read for the worktree folder), `WS_REMOTE_SCRIPTS` (scripts folder on an `--on` machine),
+`WS_REPORT_TIMEOUT` (seconds a report wait lasts, default 1800), `WS_WORKTREE_PATH` (worktree `ws-setup.sh` works on
+instead of the current directory).
 
