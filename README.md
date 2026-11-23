@@ -1,7 +1,6 @@
 # herdr-workspace
 
-Agent skills that turn [Herdr](https://herdr.dev) into a multi-repo, multi-agent workspace runner (the Herdr
-counterpart of [orca-workspace](https://github.com/tezmanian/orca-workspace)):
+Agent skills that turn [Herdr](https://herdr.dev) into a multi-repo, multi-agent workspace runner:
 
 - **One command per ticket:** a worktree of the main project on the ticket's branch, worktrees in the other
   repos it touches (admin UI, frontend, app), each set up from the repo's own config and wired to the main one (API
@@ -49,14 +48,20 @@ while you are offline: `ws-start.sh PROJ-1 --on devbox --remote-dir ~/projects/a
 `--remote-dir` is a path on that machine (`~` = its home there). The remote machine needs `hc`, the agents, the repos
 and these skills (`install.sh`; elsewhere: `WS_REMOTE_SCRIPTS=<scripts folder there>`).
 
-## Differences to orca-workspace
+## Tests
 
-| Orca | Herdr |
+`tests/run.sh` checks the scripts in throwaway repos under a temp folder: argument handling, report waits, registry,
+parent exports, and — when herdr-core runs (`hc server status`) — a whole start / status / stop cycle with worker
+limits. It also runs `shellcheck` when that is installed. Nothing outside the temp folder is touched.
+
+## How it fits Herdr
+
+| Topic | How it is done |
 |---|---|
-| repos registered in Orca, workspace dir per repo | no registry; sub repos = path or folder next to the main project; worktrees in `~/.herdr/worktrees/<repo>/<name>` (`[worktrees] directory`) |
-| setup / archive hooks | none: setup runs in a "setup" tab, teardown in `ws-stop.sh` (remove workspaces with it, not in the UI) |
-| parent/child worktrees | a manifest in the main repo's git dir (`herdr-workspace/<name>.env`) |
-| `orca orchestration` (runs, tasks, gates, board) | plain agents: `herdr agent start/prompt --wait`, report files, notifications; state in `herdr-workspace/<name>/state.md` |
+| Repos and worktrees | no registry; sub repos = path or folder next to the main project; worktrees in `~/.herdr/worktrees/<repo>/<name>` (`[worktrees] directory`) |
+| Setup and teardown | Herdr has no hooks: setup runs in a "setup" tab, teardown in `ws-stop.sh` (remove workspaces with it, not in the UI) |
+| What belongs together | a manifest in the main repo's git dir (`herdr-workspace/<name>.env`) |
+| Orchestration | plain agents: `herdr agent start/prompt --wait`, report files, notifications; state in `herdr-workspace/<name>/state.md` |
 
 ## Config
 
@@ -64,6 +69,8 @@ Per repo, first found wins: `<repo>/.herdr/workspace/workspace.env` (shared with
 `<repo>/.agents/workspace/workspace.env` (private), `~/.config/herdr-workspace/projects/<repo>/workspace.env`
 (personal; override the base with `HERDR_WORKSPACE_HOME`). Template and key reference: `skills/herdr-workspace-config/`.
 `WS_BASE_BRANCH` defaults to `master`; set it for repos with another base (`ws-doctor.sh` fails otherwise).
+`WS_IMPLEMENT_MAX` and `WS_WORKERS_MAX` (main project) cap how many implementers / workers of all roles are alive at
+once in a workspace; without them it is one implementer per repo or phase, plus planner, reviewers and decider as configured.
 
 Environment switches: `WS_BACKEND` (`herdr`/`core`), `HERDR_WORKSPACE_HOME` (personal configs), `HERDR_WORKSPACE_STATE`
 (worker registry outside a workspace, default `~/.local/state/herdr-workspace`), `HERDR_CONFIG_PATH` (Herdr's

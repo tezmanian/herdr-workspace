@@ -4,7 +4,8 @@
 # checkout are handled per WS_IGNORED_ON_REMOVE or the flag: ask (list them, remove nothing), copy (into the main
 # checkout), delete. Runs each repo's WS_TEARDOWN first (Herdr has no archive hook: remove workspaces with this script).
 # Worktrees that vanished on disk are dropped from the manifest. Nothing is removed or forgotten before the checks
-# pass. A failing WS_TEARDOWN is reported and the removal goes on. Exit: 0 done, 1 error or uncommitted changes,
+# pass. Removing the whole workspace first ends its workers (agents named "<slug>-…": planner, implementers, reviewers,
+# decider; the orchestrator's pane or terminal goes with its worktree). A failing WS_TEARDOWN is reported and the removal goes on. Exit: 0 done, 1 error or uncommitted changes,
 # 2 untracked files need --copy or --delete.
 # Usage (inside any checkout of the main project): ws-stop.sh <name> [--ask|--copy|--delete] [--sub REPO]... [--on MACHINE --remote-dir DIR]
 set -euo pipefail
@@ -109,6 +110,11 @@ for wt in ${GONE[@]+"${GONE[@]}"}; do
 done
 ((${#GONE[@]} == 0)) || git -C "$MAIN" worktree prune || true
 ((${#TREES[@]})) || ((ROOT_GONE)) || { echo "Nothing left to remove."; exit 0; }
+
+# Whole workspace: end its workers first, so none keeps working in a folder that is about to vanish.
+if ((${#ONLY[@]} == 0)) && [[ "$WS_BACKEND" != none ]]; then
+    "$WS_HOME/scripts/ws-agent.sh" stop-all "$(ws_slug "$NAME")-" || echo "Warning: not every worker could be stopped (ws-agent.sh list $(ws_slug "$NAME")-)." >&2
+fi
 
 for wt in ${TREES[@]+"${TREES[@]}"}; do
     ws_config "$(ws_main "$wt")"
