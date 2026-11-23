@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Shows workspace <name> (or all workspaces of the main project): worktrees, branch, setup state, exports, config used.
+# Shows workspace <name> (or all workspaces of the main project): worktrees, branch, setup state, exports, config used,
+# and its live agents with their state (orchestrator and workers; needs a backend).
 # Usage (inside any checkout of the main project): ws-status.sh [name] [--on MACHINE --remote-dir DIR]
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
@@ -28,6 +29,12 @@ for f in "$DIR"/*.env; do
     echo "== $n"
     show "$(ws_get "$MAIN" "$n" main)" "" "  "
     while IFS= read -r sub; do [[ -z "$sub" ]] || show "$sub" "  └ " "      "; done < <(ws_children "$MAIN" "$n")
+    if [[ "$WS_BACKEND" != none ]]; then
+        slug=$(ws_slug "$n")
+        agents=$({ "$WS_HOME/scripts/ws-agent.sh" list "orch-$slug" | grep -E "^orch-$slug(-[0-9]+)? " || true
+                   "$WS_HOME/scripts/ws-agent.sh" list "$slug-"; } 2>/dev/null | grep -v ' gone' || true)
+        if [[ -n "$agents" ]]; then echo "  agents:"; sed 's/^/    /' <<<"$agents"; else echo "  agents: none"; fi
+    fi
     echo
 done
 ((FOUND)) || { echo "No workspace ${1:-}."; exit 1; }

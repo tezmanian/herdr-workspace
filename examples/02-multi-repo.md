@@ -10,8 +10,8 @@ Copy [configs/api](configs/api) to `~/projects/api/.agents/workspace/` and [conf
 - The **API** config lists the frontend in `WS_SUBS`, starts its dev environment in `setup.sh`, picks a free port slot
   and exports `API_URL` and `WS_SLOT`.
 - The **web** config reads those exports (`API_URL`, `WS_SLOT`) and writes them into its own `.env.local`, with its own
-  dev port per slot, so two workspaces rarely collide (the example derives the slot from the worktree path, 80 slots; use
-  a real allocator, e.g. a lock file per slot, if you run many at once).
+  dev port per slot, so two workspaces never collide (the API's `setup.sh` claims a free slot with one file per slot,
+  its `teardown.sh` gives it back).
 
 ## Start
 

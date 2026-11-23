@@ -51,7 +51,7 @@ orchestrator, workers, even the pending prompt delivery. Look in with `hc attach
 
 | Task | Command |
 |---|---|
-| Workspaces, setup state, exports (API URL, slot, port), config used | `ws-status.sh [name]` |
+| Workspaces, setup state, exports (API URL, slot, port), config used, live agents and their state | `ws-status.sh [name]` |
 | Add a sub workspace | `ws-start.sh <branch> --name <name> --sub <repo>` (existing workspace: only the sub is added, no new orchestrator; `<branch>` must be the workspace's branch, see `ws-status.sh`) |
 | Remove a sub workspace | `ws-stop.sh <name> --sub <repo> [--ask\|--copy\|--delete]` |
 | Reconfigure a worktree (config changed, API moved) | `ws-setup.sh` inside it (keeps e.g. its slot and containers) |
@@ -65,7 +65,7 @@ A sub repo shown with `config: none` gets a plain worktree; set it up with skill
 main checkout: `ask` (default `WS_IGNORED_ON_REMOVE`) lists them and removes nothing (exit 2) — show the user the list
 and rerun with their choice. Until those checks pass nothing is removed or forgotten. It runs `WS_TEARDOWN` of each repo
 (a failing teardown is reported as a warning and the removal goes on: tell the user what may still run), removes subs
-first, closes the Herdr workspaces, deletes the workspace files (reports, registry) and keeps all branches; worktrees
+first (a whole-workspace removal ends its workers before that), closes the Herdr workspaces, deletes the workspace files (reports, registry) and keeps all branches; worktrees
 that vanished on disk are dropped from the manifest. A `--sub` that is not part of the workspace is an error. Then the user tests locally on the branch.
 
 **Always remove with `ws-stop.sh`, never in the Herdr UI:** Herdr has no archive hook, so only `ws-stop.sh` runs the teardown (containers, VMs).

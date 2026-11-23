@@ -117,8 +117,9 @@ while [[ "$("$WS_HOME/scripts/ws-agent.sh" state "$ORCH")" != gone ]]; do n=$((n
 # Either way that happens in the background, so this command returns at once: with core as its own terminal (it also
 # survives a closed ssh link), with Herdr 1 as a detached process that logs into the workspace files folder.
 if [[ "$WS_BACKEND" == core ]]; then
+    ws_env_args
     hc run --bg --no-parent --rm --name "dl-$SLUG" --cwd "$ROOT" --label "ws=$NAME" \
-        "$WS_HOME/scripts/ws-agent.sh" prompt "$ORCH" "$PROMPT" >/dev/null
+        env ${ENV_ARGS[@]+"${ENV_ARGS[@]}"} "$WS_HOME/scripts/ws-agent.sh" prompt "$ORCH" "$PROMPT" >/dev/null
     echo "orchestrator: $ORCH (prompt follows once it is idle; if it asks for the folder trust: hc attach $ORCH)"
 else
     nohup "$WS_HOME/scripts/ws-agent.sh" prompt "$ORCH" "$PROMPT" >"$DIR/$NAME/orchestrator-prompt.log" 2>&1 </dev/null &

@@ -39,7 +39,8 @@ The main project's config also drives the orchestrator; each sub repo's config i
   `WS_KEEP_PATTERNS` (rsync patterns, default `WS_COPY_PATTERNS`): untracked files offered for copy-back,
   `WS_IGNORED_ON_REMOVE` (`ask`/`copy`/`delete`).
 - **Orchestration (main project):** `WS_PLAN`, `WS_PLAN_BREAKS`, `WS_REVIEW*`, `WS_AUTONOMY`, `WS_DECIDE_*`, `WS_ESCALATE`,
-  `WS_*_SKILL`, `WS_*_BRIEF` (`<spec>` = spec path), context hygiene `WS_PLANNER_AFTER`, `WS_IMPLEMENTER_AFTER(_WHEN)`,
+  `WS_*_SKILL`, `WS_*_BRIEF` (`<spec>` = spec path), `WS_IMPLEMENT_MAX` / `WS_WORKERS_MAX` (most implementers / workers of
+  all roles alive at once per workspace, empty = no limit; enforced by `ws-agent.sh start`), context hygiene `WS_PLANNER_AFTER`, `WS_IMPLEMENTER_AFTER(_WHEN)`,
   `WS_DECIDER_AFTER`. The scripts only read the first few; the orchestrator agent reads the rest from the file.
 - **Agents per role** (`ORCHESTRATOR`, `PLAN`, `IMPLEMENT` per repo, `REVIEW`, `DECIDE`): `WS_<ROLE>_AGENT`, `_MODEL`,
   `_EFFORT`, `_ARGS`.

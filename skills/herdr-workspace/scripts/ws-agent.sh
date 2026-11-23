@@ -10,6 +10,8 @@
 #   ws-agent.sh wait <name> [--timeout SEC]   # until it stops working (or blocks); prints the state
 #   ws-agent.sh read <name> [lines]
 #   ws-agent.sh list [prefix]     # "name state" per line (also registered workers whose name was lost)
+#   ws-agent.sh stop <name>       # ends a worker for good (closes its pane / kills its terminal), e.g. to free a slot
+#   ws-agent.sh stop-all <prefix> # the same for every live agent whose name starts with <prefix> (e.g. "<slug>-")
 #   ws-agent.sh focus <name> | notify <title> [body]
 # Names: [a-z][a-z0-9_-]{0,31}; with Herdr 1 a raw pane ID (w3:p2) works wherever a name is expected. Workers outlive
 # this command (and, with core, an ended ssh link or parent agent).
@@ -19,13 +21,17 @@
 # (e.g. after the orchestrator's /clear) falls back to it.
 # Report waits (--until-report, wait-report) end after WS_REPORT_TIMEOUT seconds (default 1800) unless --timeout says
 # otherwise; --timeout 0 waits without limit.
+# Limits (main project's config; empty = none): WS_IMPLEMENT_MAX=N refuses `start` of a <slug>-impl-… worker (exit 6)
+# while N implementers of that workspace are alive; WS_WORKERS_MAX=N does the same for all workers "<slug>-…" of the
+# workspace given with --ws (planner, implementers, reviewers, decider; not the orchestrator). Reuse a worker
+# (`prompt`) or `stop` a finished one first.
 # Exit codes: 0 ok, 1 error (also: the prompt could not be sent), 3 prompt --report: turn ended without a finished
-# report, 4 timeout, 5 agent blocked, in error or gone while waiting for a report.
+# report, 4 timeout, 5 agent blocked, in error or gone while waiting for a report, 6 worker limit reached.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 ws_help "$@"
 BE=$WS_BACKEND
-CMD=${1:?usage: ws-agent.sh start|prompt|state|wait|wait-report|read|list|focus|notify …}
+CMD=${1:?usage: ws-agent.sh start|prompt|state|wait|wait-report|read|list|stop|stop-all|focus|notify …}
 shift
 [[ "$BE" != none || "$CMD" == wait-report ]] || { echo "No backend: run inside Herdr (HERDR_ENV=1) or start herdr-core (hc server status)." >&2; exit 1; }
 
@@ -152,6 +158,55 @@ send_failed() {
         || echo "Warning: sending to $NAME reported an error; check with 'ws-agent.sh read $NAME' whether the prompt arrived: $1" >&2
 }
 
+# live_names <prefix>: names of the live agents starting with <prefix>, one per line.
+live_names() {
+    if [[ $BE == herdr ]]; then herdr agent list | jq -r --arg p "$1" '.result.agents[] | select(.name != null and (.name | startswith($p))) | .name'
+    else hc ls --json | jq -r --arg p "$1" '.terminals[] | select(.name != null and (.name | startswith($p))) | .name'; fi
+}
+# limit_check <key> <max> <name> <prefix>: exit 6 when <max> other agents named <prefix>… are alive.
+limit_check() {
+    local others n
+    [[ -n "$2" ]] || return 0
+    [[ "$2" =~ ^[1-9][0-9]*$ ]] || { echo "$1 must be a number from 1 (or empty), got '$2'." >&2; exit 1; }
+    others=$(live_names "$4" | grep -vx "$3" || true)
+    n=$(grep -c . <<<"$others" || true)
+    ((n < $2)) || {
+        echo "Worker limit reached ($1=$2), alive: $(tr '\n' ' ' <<<"$others"). Give the task to one of them (ws-agent.sh prompt) or end a finished one (ws-agent.sh stop <name>), then start $3." >&2
+        exit 6
+    }
+}
+# check_limits <name> <cwd> <workspace>: enforces WS_IMPLEMENT_MAX (names <slug>-impl-…) and WS_WORKERS_MAX (names
+# "<slug of --ws>-…") of the main project: the repo this command runs in, else the one of <cwd>.
+check_limits() {
+    local main slug
+    main=$(ws_main "$PWD" 2>/dev/null) || main=""
+    [[ -n "$main" ]] || main=$(ws_main "$2" 2>/dev/null) || return 0
+    ws_config "$main"
+    [[ "$1" != *-impl-* ]] || limit_check WS_IMPLEMENT_MAX "$WS_IMPLEMENT_MAX" "$1" "${1%%-impl-*}-impl-"
+    [[ -n "$3" ]] || return 0
+    slug=$(ws_slug "$3")
+    [[ "$1" != "$slug"-* ]] || limit_check WS_WORKERS_MAX "$WS_WORKERS_MAX" "$1" "$slug-"
+}
+# stop_agent <name>: ends it for good and marks it dead in the registry. Returns 1 if it could not be ended.
+stop_agent() {
+    local pane
+    resolve "$1" || { echo "$1 is already gone."; return 0; }
+    if [[ -n "${HC_TERMINAL_ID:-}" && "$TARGET" == "$HC_TERMINAL_ID" ]]; then
+        echo "$1 is the agent this command runs in; not stopped." >&2; return 1
+    fi
+    if [[ $BE == herdr ]]; then
+        pane=$(herdr agent get "$TARGET" 2>/dev/null | jq -r '.result.agent.pane_id // empty') || pane=""
+        [[ -n "$pane" ]] || { echo "No pane found for $1." >&2; return 1; }
+        [[ "$pane" != "${HERDR_PANE_ID:-}" ]] || { echo "$1 is the agent this command runs in; not stopped." >&2; return 1; }
+        herdr pane close "$pane" >/dev/null || return 1
+    else
+        hc kill "$TARGET" >/dev/null || return 1
+        hc rm "$TARGET" >/dev/null 2>&1 || true
+    fi
+    reg_mark "$1" dead
+    echo "$1 stopped"
+}
+
 # Builds OPTS for prompt/wait: --wait, --timeout in the unit of the backend (herdr ms, core s).
 build_opts() {
     OPTS=()
@@ -174,6 +229,7 @@ case $CMD in
         done
         [[ "$NAME" =~ ^[a-z][a-z0-9_-]{0,31}$ ]] || { echo "Invalid agent name '$NAME': [a-z][a-z0-9_-]{0,31}." >&2; exit 1; }
         [[ -d "$CWD" ]] || { echo "--cwd DIR required" >&2; exit 1; }
+        check_limits "$NAME" "$CWD" "$WSN"
         ARGS=()
         while IFS= read -r a; do ARGS+=("$a"); done < <(ws_agent_args "$KIND" "$MODEL" "$EFFORT" "$EXTRA")
         PANE="" TID=""
@@ -267,8 +323,7 @@ case $CMD in
         else hc read "$TARGET" | tail -n "$LINES_"; fi ;;
     list)
         PREFIX=${1:-}
-        if [[ $BE == herdr ]]; then names=$(herdr agent list | jq -r --arg p "$PREFIX" '.result.agents[] | select(.name != null and (.name | startswith($p))) | .name')
-        else names=$(hc ls --json | jq -r --arg p "$PREFIX" '.terminals[] | select(.name != null and (.name | startswith($p))) | .name'); fi
+        names=$(live_names "$PREFIX")
         while IFS= read -r n; do [[ -z "$n" ]] || echo "$n $(be_state "$n")"; done <<<"$names"
         # registered workers that no longer answer to their name (renamed or lost): resolve through the registry
         while IFS= read -r f; do
@@ -276,6 +331,12 @@ case $CMD in
         done < <(reg_read_files) | sort -u | while IFS= read -r n; do
             grep -qx "$n" <<<"$names" || { if resolve "$n" 2>/dev/null; then echo "$n $(be_state "$TARGET") (via registry)"; else echo "$n gone (registry: dead)"; fi; }
         done ;;
+    stop) stop_agent "${1:?name}" ;;
+    stop-all)
+        PREFIX=${1:?prefix, e.g. <slug>-}
+        RC=0
+        while IFS= read -r n; do [[ -z "$n" ]] || stop_agent "$n" || RC=1; done < <(live_names "$PREFIX")
+        exit $RC ;;
     focus)
         resolve "${1:?name}" || { echo "Agent $1 is gone." >&2; exit 1; }
         if [[ $BE == herdr ]]; then herdr agent focus "$TARGET" >/dev/null; else echo "Attach with: hc attach $TARGET"; fi ;;

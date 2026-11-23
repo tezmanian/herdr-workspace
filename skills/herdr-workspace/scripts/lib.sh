@@ -27,7 +27,7 @@ ws_main() { git -C "$1" worktree list --porcelain | sed -n '1s/^worktree //p'; }
 ws_config() {
     WS_BASE_BRANCH=master WS_SUBS="" WS_PLAN=worker WS_PLAN_BREAKS="" WS_REVIEW=off WS_AUTONOMY=off WS_IGNORED_ON_REMOVE=ask
     WS_COPY="" WS_COPY_PATTERNS="" WS_COPY_EXCLUDE="" WS_CLONE="" WS_KEEP="" WS_KEEP_PATTERNS=""
-    WS_SETUP="" WS_TEARDOWN=""
+    WS_SETUP="" WS_TEARDOWN="" WS_IMPLEMENT_MAX="" WS_WORKERS_MAX=""
     WS_ORCHESTRATOR_AGENT=claude WS_ORCHESTRATOR_MODEL="" WS_ORCHESTRATOR_EFFORT="" WS_ORCHESTRATOR_ARGS=""
     WS_CONFIG_DIR=""
     local f
@@ -164,17 +164,31 @@ be_worktree() {
     fi
 }
 
+# ws_env_args: sets ENV_ARGS to KEY=value words for the switches of these scripts that are set here. Background
+# terminals (setup, prompt delivery) get the environment of the Herdr/core server, not of the caller, so a
+# HERDR_WORKSPACE_HOME set only in the calling shell would be lost: the config would not be found and the setup would
+# run empty and still say "ready".
+ws_env_args() {
+    local v
+    ENV_ARGS=()
+    for v in HERDR_WORKSPACE_HOME HERDR_WORKSPACE_STATE HERDR_CONFIG_PATH WS_BACKEND WS_REPORT_TIMEOUT; do
+        [[ -z "${!v:-}" ]] || ENV_ARGS+=("$v=${!v}")
+    done
+}
+
 # be_setup <workspace name> <worktree> <workspace id> [parent worktree]: runs ws-setup.sh for the worktree in the background
 # (Herdr 1: a "setup" tab; core: a terminal named su-…, kept after it finishes so its log can be read).
 be_setup() {
     local name=$1 wt=$2 wsid=$3 parent=${4:-} tab
+    ws_env_args
+    ENV_ARGS+=("WS_PARENT=$parent")
     if [[ $WS_BACKEND == herdr ]]; then
         tab=$(herdr tab create --workspace "$wsid" --cwd "$wt" --label setup --no-focus)
         herdr pane run "$(jq -r '.result.root_pane.pane_id' <<<"$tab")" \
-            "$(printf 'WS_PARENT=%q %q' "$parent" "$WS_HOME/scripts/ws-setup.sh")" >/dev/null
+            "$(printf '%q ' env "${ENV_ARGS[@]}" "$WS_HOME/scripts/ws-setup.sh")" >/dev/null
     else
         hc run --bg --no-parent --name "su-$(ws_slug "$name")-$(ws_slug "$(basename "$(ws_main "$wt")")" | cut -c1-9)" --cwd "$wt" \
-            --label "ws=$name" --label role=setup env "WS_PARENT=$parent" "$WS_HOME/scripts/ws-setup.sh" >/dev/null
+            --label "ws=$name" --label role=setup env "${ENV_ARGS[@]}" "$WS_HOME/scripts/ws-setup.sh" >/dev/null
     fi
 }
 

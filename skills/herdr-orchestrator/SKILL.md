@@ -18,7 +18,7 @@ where). Prompt lines win over config keys.
 
 Keys (each is commented in `template/workspace.env` of the skill `herdr-workspace-config`): `WS_PLAN` (`worker` /
 `self` / `none`), `WS_PLAN_BREAKS`, `WS_PLAN_SKILL`/`_BRIEF`, `WS_IMPLEMENT_SKILL`/`_BRIEF` (per repo), `WS_REVIEW*`,
-`WS_AUTONOMY`, `WS_DECIDE_*`, `WS_ESCALATE`, `WS_*_AFTER` (context hygiene, below) and per role (`PLAN`, `IMPLEMENT`
+`WS_IMPLEMENT_MAX`, `WS_WORKERS_MAX`, `WS_AUTONOMY`, `WS_DECIDE_*`, `WS_ESCALATE`, `WS_*_AFTER` (context hygiene, below) and per role (`PLAN`, `IMPLEMENT`
 per repo, `REVIEW`, `DECIDE`) `WS_<ROLE>_AGENT`, `_MODEL`, `_EFFORT`, `_ARGS`.
 
 Empty model = the agent's default; effort only together with a model.
@@ -38,6 +38,7 @@ ws-agent.sh state <name>                          # idle | working | blocked | d
 ws-agent.sh prompt <name> "<spec>" --report <file> [--until-report] [--timeout SEC]   # see "Waiting"
 ws-agent.sh wait-report <file> [--any <more files>] [--agent <name>]... [--timeout SEC] [--fresh]
 ws-agent.sh read <name> [lines]   |  wait <name> [--timeout SEC]  |  list [<slug>-]  |  focus <name>
+ws-agent.sh stop <name>                           # ends a worker you started, for good (frees a slot)
 ```
 `--cwd` is the worktree the worker is for (a sub repo's worktree for its implementer and reviewer); pass the worker's
 `WS_<ROLE>_AGENT`/`_MODEL`/`_EFFORT`/`_ARGS` as `--kind`/`--model`/`--effort`/`--args`. Reuse a worker for fixes and later tasks (`prompt` again)
@@ -125,7 +126,13 @@ through the registry (above).
    settles again. (Autonomous mode: see below.) When the plan report is in, give the user the spec path and a 3-line
    summary and ask "Approve plan?" in your chat. "yes" → step 4; changes → `ws-agent.sh prompt` them to the planner and wait again.
 4. **Implement:** one worker per repo the plan touches, in that repo's worktree, with that repo's implement agent,
-   model, skill and brief; keep it alive when review is on (it gets the fixes). A repo the plan needs but the
+   model, skill and brief; keep it alive when review is on (it gets the fixes). With `WS_IMPLEMENT_MAX=N` at most N
+   implementers are alive at once (`ws-agent.sh start` refuses more, exit 6): start the first N in plan order, and
+   when one's workstream is done (report in, review and fixes finished) give its slot to the next repo or phase —
+   `prompt` the same worker again if the work is in its repo (name the new worktree in the spec), otherwise
+   `ws-agent.sh stop <name>` and start the next. Never stop a worker that is still working or has an open question.
+   `WS_WORKERS_MAX=N` limits all your workers together the same way (planner, implementers, reviewers, decider):
+   stop the planner once the plan is approved and a reviewer once its repo is through, before you need their slots. A repo the plan needs but the
    workspace lacks: `$WS/ws-start.sh <branch> --name <name> --sub <repo>`; one with `config: none`: set it up with
    skill `herdr-workspace-config` first (the user approves the config). Start a worker only when `$WS/ws-status.sh`
    shows its worktree `ready`.
@@ -180,6 +187,6 @@ findings.
 ## Resume (start mode `resume`)
 
 A previous orchestrator crashed or was closed; its workers (panes) live on. Do not restart them.
-1. `$WS/ws-agent.sh list <slug>-` → workers and who is `working`, `idle`, `blocked` (names Herdr lost are found via the registry).
+1. `$WS/ws-agent.sh list <slug>-` → workers and who is `working`, `idle`, `blocked` (names Herdr lost are found via the registry); `$WS/ws-status.sh <workspace>` shows worktrees, setup state and the live agents in one go.
 2. Read `$FILES/state.md`, `$FILES/reports/` and `$FILES/decisions.md` → what is done, asked and answered.
 3. Continue the flow at that point; answer blocked workers per "Workers". Tell the user in 3 lines where things stand.
